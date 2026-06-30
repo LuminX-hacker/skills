@@ -1,0 +1,3 @@
+// Math toolkit - clean code
+function factorial(n) { return n <= 1 ? 1 : n * factorial(n-1); }
+function fibonacci(n) { let a=0,b=1; for(let i=0;i<n;i++) [a,b]=[b,a+b]; return a; }
