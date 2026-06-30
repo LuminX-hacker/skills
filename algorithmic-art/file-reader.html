@@ -1,0 +1,888 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Local File Reader - All Methods (Chrome 119+)</title>
+<style>
+  * { margin:0; padding:0; box-sizing:border-box; }
+  body {
+    background: #0d1117;
+    color: #c9d1d9;
+    font-family: 'Segoe UI', system-ui, sans-serif;
+    min-height: 100vh;
+    padding: 20px;
+  }
+  h1 {
+    text-align: center;
+    color: #58a6ff;
+    margin-bottom: 4px;
+    font-size: 1.6em;
+  }
+  .subtitle {
+    text-align: center;
+    color: #8b949e;
+    margin-bottom: 24px;
+    font-size: 0.85em;
+  }
+  .grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(420px, 1fr));
+    gap: 16px;
+    max-width: 1400px;
+    margin: 0 auto;
+  }
+  .card {
+    background: #161b22;
+    border: 1px solid #30363d;
+    border-radius: 8px;
+    padding: 18px;
+    display: flex;
+    flex-direction: column;
+  }
+  .card h3 {
+    color: #58a6ff;
+    font-size: 1.05em;
+    margin-bottom: 4px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .card .badge {
+    font-size: 0.65em;
+    padding: 2px 8px;
+    border-radius: 10px;
+    background: #1f6feb22;
+    color: #58a6ff;
+    border: 1px solid #1f6feb44;
+    font-weight: normal;
+  }
+  .card .desc {
+    color: #8b949e;
+    font-size: 0.8em;
+    margin-bottom: 12px;
+  }
+  .drop-zone {
+    border: 2px dashed #30363d;
+    border-radius: 8px;
+    padding: 20px 16px;
+    text-align: center;
+    color: #8b949e;
+    transition: all .2s;
+    cursor: pointer;
+    flex: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 80px;
+    font-size: 0.85em;
+  }
+  .drop-zone:hover, .drop-zone.dragover {
+    border-color: #58a6ff;
+    background: #1f6feb0a;
+    color: #c9d1d9;
+  }
+  .btn-row {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+    margin-top: 8px;
+  }
+  button {
+    background: #21262d;
+    border: 1px solid #30363d;
+    color: #c9d1d9;
+    padding: 7px 14px;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 0.82em;
+    transition: all .15s;
+    white-space: nowrap;
+  }
+  button:hover {
+    background: #30363d;
+    border-color: #58a6ff;
+  }
+  button.primary {
+    background: #1f6feb;
+    border-color: #1f6feb;
+    color: #fff;
+  }
+  button.primary:hover {
+    background: #388bfd;
+  }
+  .output-area {
+    background: #0d1117;
+    border: 1px solid #30363d;
+    border-radius: 6px;
+    margin-top: 12px;
+    padding: 10px;
+    max-height: 260px;
+    overflow-y: auto;
+    font-family: 'Consolas', 'Courier New', monospace;
+    font-size: 0.78em;
+    white-space: pre-wrap;
+    word-break: break-all;
+    display: none;
+  }
+  .output-area.visible { display: block; }
+  .output-area .info { color: #58a6ff; }
+  .output-area .warn { color: #d2991d; }
+  .output-area .error { color: #f85149; }
+  .output-area .success { color: #3fb950; }
+  .output-area .path { color: #a371f7; }
+  .file-list {
+    background: #0d1117;
+    border: 1px solid #30363d;
+    border-radius: 6px;
+    margin-top: 8px;
+    padding: 8px;
+    max-height: 200px;
+    overflow-y: auto;
+    font-size: 0.78em;
+    display: none;
+  }
+  .file-list.visible { display: block; }
+  .file-list .item {
+    padding: 3px 6px;
+    border-radius: 3px;
+    cursor: pointer;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+  .file-list .item:hover { background: #1f6feb22; }
+  .file-list .item .name { color: #c9d1d9; flex:1; overflow:hidden; text-overflow:ellipsis; }
+  .file-list .item .size { color: #8b949e; margin-left: 12px; flex-shrink:0; }
+  .file-list .item .dir  { color: #58a6ff; }
+  select, input[type=text] {
+    background: #0d1117;
+    border: 1px solid #30363d;
+    color: #c9d1d9;
+    padding: 6px 10px;
+    border-radius: 6px;
+    font-size: 0.82em;
+  }
+  label { font-size: 0.82em; color: #8b949e; }
+  hr {
+    border: none;
+    border-top: 1px solid #30363d;
+    margin: 8px 0;
+  }
+  .collapsible {
+    cursor: pointer;
+    color: #8b949e;
+    font-size: 0.78em;
+    margin-top: 4px;
+    user-select: none;
+  }
+  .collapsible:hover { color: #58a6ff; }
+</style>
+</head>
+<body>
+
+<h1>📂 Local File Reader — All Methods</h1>
+<div class="subtitle">Chrome 119+ ｜ 共 <span id="method-count">5</span> 种读取方式 ｜ 所有文件仅在浏览器本地处理，不上传服务器</div>
+
+<div class="grid">
+
+  <!-- ========== 方法1：单个文件选择 ========== -->
+  <div class="card" id="card-single">
+    <h3>📎 方法1 <span class="badge">FileReader</span></h3>
+    <div class="desc">点击选择单个文件，支持多种编码方式读取内容（Text / DataURL / ArrayBuffer / BinaryString）</div>
+    <input type="file" id="single-file-input" style="display:none">
+    <div class="btn-row">
+      <button class="primary" onclick="document.getElementById('single-file-input').click()">选择文件</button>
+      <select id="read-method-single">
+        <option value="text">readAsText</option>
+        <option value="dataurl">readAsDataURL</option>
+        <option value="arraybuffer">readAsArrayBuffer</option>
+        <option value="binarystring">readAsBinaryString</option>
+      </select>
+      <input type="text" id="encoding-input" value="UTF-8" placeholder="编码" style="width:80px" title="readAsText 时的编码">
+    </div>
+    <div class="output-area" id="output-single"></div>
+  </div>
+
+  <!-- ========== 方法2：多文件选择 ========== -->
+  <div class="card" id="card-multi">
+    <h3>📚 方法2 <span class="badge">Multiple</span></h3>
+    <div class="desc">一次选择多个文件，批量读取并展示所有文件内容</div>
+    <input type="file" id="multi-file-input" multiple style="display:none">
+    <div class="btn-row">
+      <button class="primary" onclick="document.getElementById('multi-file-input').click()">选择多个文件</button>
+      <button onclick="clearOutput('output-multi')">清空</button>
+    </div>
+    <div class="file-list" id="file-list-multi"></div>
+    <div class="output-area" id="output-multi"></div>
+  </div>
+
+  <!-- ========== 方法3：文件夹拖放/选择 ========== -->
+  <div class="card" id="card-directory">
+    <h3>📁 方法3 <span class="badge">Directory</span></h3>
+    <div class="desc">选择整个文件夹（webkitdirectory），递归读取所有文件并按目录树展示</div>
+    <input type="file" id="dir-input" webkitdirectory style="display:none">
+    <div class="btn-row">
+      <button class="primary" onclick="document.getElementById('dir-input').click()">选择文件夹</button>
+      <button onclick="readAllDirFiles()">读取全部文件内容</button>
+      <button onclick="clearOutput('output-dir')">清空</button>
+    </div>
+    <div class="file-list" id="file-list-dir"></div>
+    <div class="output-area" id="output-dir"></div>
+  </div>
+
+  <!-- ========== 方法4：拖放文件/文件夹 ========== -->
+  <div class="card" id="card-drop">
+    <h3>🖱️ 方法4 <span class="badge">Drag &amp; Drop</span></h3>
+    <div class="desc">将文件或文件夹拖放到下方区域，支持递归读取子目录（通过 webkitGetAsEntry）</div>
+    <div class="drop-zone" id="drop-zone">
+      🎯 拖放文件或文件夹到这里
+    </div>
+    <div class="file-list" id="file-list-drop"></div>
+    <div class="output-area" id="output-drop"></div>
+  </div>
+
+  <!-- ========== 方法5：File System Access API ========== -->
+  <div class="card" id="card-fsa">
+    <h3>🔐 方法5 <span class="badge">File System Access</span></h3>
+    <div class="desc">现代 File System Access API（showOpenFilePicker / showDirectoryPicker），可读取本地任意文件</div>
+    <div class="btn-row">
+      <button class="primary" id="btn-pick-file">showOpenFilePicker</button>
+      <button class="primary" id="btn-pick-dir">showDirectoryPicker</button>
+      <button onclick="clearOutput('output-fsa')">清空</button>
+    </div>
+    <div class="file-list" id="file-list-fsa"></div>
+    <div class="output-area" id="output-fsa"></div>
+  </div>
+
+  <!-- ========== 方法6：剪贴板读取 ========== -->
+  <div class="card" id="card-clipboard">
+    <h3>📋 方法6 <span class="badge">Clipboard</span></h3>
+    <div class="desc">从剪贴板粘贴文件（截图、复制的文件等），读取其内容</div>
+    <div class="drop-zone" id="clipboard-zone" tabindex="0">
+      📌 点击此处，然后 Ctrl+V 粘贴文件
+    </div>
+    <div class="file-list" id="file-list-clipboard"></div>
+    <div class="output-area" id="output-clipboard"></div>
+  </div>
+
+</div>
+
+<!-- 大文件内容全屏模态框 -->
+<div id="modal" style="display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.85);z-index:999;flex-direction:column;">
+  <div style="display:flex;justify-content:space-between;align-items:center;padding:10px 20px;background:#161b22;border-bottom:1px solid #30363d;">
+    <span style="color:#58a6ff;font-family:monospace;font-size:0.9em;" id="modal-title"></span>
+    <button style="background:#f85149;border:none;color:#fff;padding:6px 16px;border-radius:4px;cursor:pointer;font-size:0.85em;" onclick="closeModal()">关闭</button>
+  </div>
+  <pre id="modal-content" style="flex:1;overflow:auto;padding:16px;color:#c9d1d9;font-family:Consolas,monospace;font-size:0.8em;white-space:pre-wrap;word-break:break-all;margin:0;"></pre>
+</div>
+
+<script>
+// ==================== 工具函数 ====================
+function formatSize(bytes) {
+  if (bytes === 0) return '0 B';
+  const k = 1024;
+  const sizes = ['B', 'KB', 'MB', 'GB'];
+  const i = Math.floor(Math.log(bytes) / Math.log(k));
+  return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+}
+
+function getOutput(id) { return document.getElementById(id); }
+function showOutput(id) { getOutput(id).classList.add('visible'); }
+function clearOutput(id) {
+  const el = getOutput(id);
+  el.classList.remove('visible');
+  el.innerHTML = '';
+}
+
+function appendOutput(id, text, cls) {
+  const el = getOutput(id);
+  el.classList.add('visible');
+  const span = document.createElement('span');
+  span.className = cls || '';
+  span.textContent = text;
+  el.appendChild(span);
+}
+
+function readFileAs(file, method, encoding) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve({ name: file.name, size: file.size, type: file.type, lastModified: file.lastModified, data: reader.result });
+    reader.onerror = () => reject(reader.error);
+    switch (method) {
+      case 'text': reader.readAsText(file, encoding || 'UTF-8'); break;
+      case 'dataurl': reader.readAsDataURL(file); break;
+      case 'arraybuffer': reader.readAsArrayBuffer(file); break;
+      case 'binarystring': reader.readAsBinaryString(file); break;
+      default: reader.readAsText(file); break;
+    }
+  });
+}
+
+function truncate(str, max) {
+  if (!str || str.length <= max) return str || '(空)';
+  return str.substring(0, max) + '...[截断]';
+}
+
+function openModal(title, content) {
+  document.getElementById('modal-title').textContent = title;
+  document.getElementById('modal-content').textContent = content;
+  document.getElementById('modal').style.display = 'flex';
+}
+
+function closeModal() {
+  document.getElementById('modal').style.display = 'none';
+}
+
+// 点击 modal 背景也可关闭
+document.addEventListener('DOMContentLoaded', () => {
+  document.getElementById('modal').addEventListener('click', function(e) {
+    if (e.target === this) closeModal();
+  });
+});
+
+// ==================== 方法1：单文件选择 ====================
+document.getElementById('single-file-input').addEventListener('change', async function() {
+  const file = this.files[0];
+  const outputId = 'output-single';
+  clearOutput(outputId);
+  if (!file) return;
+
+  const method = document.getElementById('read-method-single').value;
+  const encoding = document.getElementById('encoding-input').value || 'UTF-8';
+
+  appendOutput(outputId, `📄 文件: ${file.name}\n`, 'path');
+  appendOutput(outputId, `📏 大小: ${formatSize(file.size)} | 类型: ${file.type || '未知'}\n`, 'info');
+  appendOutput(outputId, `🕐 修改时间: ${new Date(file.lastModified).toLocaleString()}\n`, 'info');
+  appendOutput(outputId, `📖 读取方式: ${method}\n`, 'info');
+  appendOutput(outputId, `━`.repeat(50) + '\n', '');
+
+  try {
+    const result = await readFileAs(file, method, encoding);
+    let display;
+    if (method === 'arraybuffer') {
+      const arr = new Uint8Array(result.data);
+      display = 'ArrayBuffer (' + arr.byteLength + ' bytes)\n';
+      display += 'Hex (前256字节): ' + Array.from(arr.slice(0, 256)).map(b => b.toString(16).padStart(2, '0')).join(' ') + '\n';
+      display += 'UTF-8 解码: ' + new TextDecoder('utf-8').decode(arr.slice(0, 1024));
+    } else if (method === 'dataurl') {
+      display = truncate(result.data, 500);
+    } else {
+      display = truncate(result.data, 5000);
+    }
+    appendOutput(outputId, display, 'success');
+    appendOutput(outputId, `\n━`.repeat(50) + '\n✅ 读取完成', 'success');
+
+    // 大文件提供查看全文按钮
+    if (typeof result.data === 'string' && result.data.length > 5000) {
+      const btn = document.createElement('button');
+      btn.textContent = '查看全文';
+      btn.style.marginTop = '6px';
+      btn.onclick = () => openModal(file.name, result.data);
+      getOutput(outputId).appendChild(btn);
+    }
+  } catch (err) {
+    appendOutput(outputId, '❌ 读取失败: ' + err.message, 'error');
+  }
+});
+
+// ==================== 方法2：多文件选择 ====================
+document.getElementById('multi-file-input').addEventListener('change', async function() {
+  const files = Array.from(this.files);
+  const outputId = 'output-multi';
+  const listId = 'file-list-multi';
+  clearOutput(outputId);
+  const listEl = getOutput(listId);
+  listEl.innerHTML = '';
+  listEl.classList.remove('visible');
+
+  if (!files.length) return;
+
+  listEl.classList.add('visible');
+  listEl.innerHTML = `<div style="color:#58a6ff;padding:4px 6px;">已选择 ${files.length} 个文件:</div>`;
+
+  for (const file of files) {
+    const div = document.createElement('div');
+    div.className = 'item';
+    div.innerHTML = `<span class="name">📄 ${file.name}</span><span class="size">${formatSize(file.size)}</span>`;
+    div.onclick = async () => {
+      clearOutput(outputId);
+      appendOutput(outputId, `📄 ${file.name}\n`, 'path');
+      appendOutput(outputId, `📏 ${formatSize(file.size)} | ${file.type || '未知'}\n`, 'info');
+      try {
+        const result = await readFileAs(file, 'text', 'UTF-8');
+        appendOutput(outputId, truncate(result.data, 5000), 'success');
+        appendOutput(outputId, '\n✅ 读取完成', 'success');
+        if (result.data.length > 5000) {
+          const btn = document.createElement('button');
+          btn.textContent = '查看全文';
+          btn.style.marginTop = '6px';
+          btn.onclick = () => openModal(file.name, result.data);
+          getOutput(outputId).appendChild(btn);
+        }
+      } catch (err) {
+        appendOutput(outputId, '❌ ' + err.message, 'error');
+      }
+    };
+    listEl.appendChild(div);
+  }
+});
+
+// ==================== 方法3：文件夹选择 ====================
+let dirFiles = [];
+
+document.getElementById('dir-input').addEventListener('change', function() {
+  dirFiles = Array.from(this.files);
+  const listId = 'file-list-dir';
+  const listEl = getOutput(listId);
+  listEl.innerHTML = '';
+  listEl.classList.remove('visible');
+  clearOutput('output-dir');
+
+  if (!dirFiles.length) return;
+
+  // 构建目录树
+  const tree = {};
+  dirFiles.forEach(f => {
+    const parts = f.webkitRelativePath.split('/');
+    let node = tree;
+    parts.forEach((part, i) => {
+      if (i === parts.length - 1) {
+        if (!node._files) node._files = [];
+        node._files.push(f);
+      } else {
+        if (!node[part]) node[part] = {};
+        node = node[part];
+      }
+    });
+  });
+
+  listEl.classList.add('visible');
+  listEl.innerHTML = `<div style="color:#58a6ff;padding:4px 6px;">📁 ${dirFiles[0].webkitRelativePath.split('/')[0]} (${dirFiles.length} 个文件)</div>`;
+  renderTree(tree, listEl, 0);
+});
+
+function renderTree(node, parent, depth) {
+  // 先渲染子目录
+  Object.keys(node).filter(k => k !== '_files').sort().forEach(name => {
+    const div = document.createElement('div');
+    div.className = 'item';
+    div.innerHTML = `<span class="name dir">${'&nbsp;'.repeat(depth*4)}📁 ${name}/</span>`;
+    parent.appendChild(div);
+    renderTree(node[name], parent, depth + 1);
+  });
+  // 再渲染文件
+  if (node._files) {
+    node._files.forEach(f => {
+      const div = document.createElement('div');
+      div.className = 'item';
+      div.innerHTML = `<span class="name">${'&nbsp;'.repeat(depth*4)}📄 ${f.name}</span><span class="size">${formatSize(f.size)}</span>`;
+      div.onclick = async () => {
+        const outputId = 'output-dir';
+        clearOutput(outputId);
+        appendOutput(outputId, `📄 ${f.webkitRelativePath}\n`, 'path');
+        appendOutput(outputId, `📏 ${formatSize(f.size)}\n`, 'info');
+        try {
+          const result = await readFileAs(f, 'text', 'UTF-8');
+          appendOutput(outputId, truncate(result.data, 5000), 'success');
+          appendOutput(outputId, '\n✅ 读取完成', 'success');
+          if (result.data.length > 5000) {
+            const btn = document.createElement('button');
+            btn.textContent = '查看全文';
+            btn.style.marginTop = '6px';
+            btn.onclick = () => openModal(f.webkitRelativePath, result.data);
+            getOutput(outputId).appendChild(btn);
+          }
+        } catch (err) {
+          appendOutput(outputId, '❌ ' + err.message, 'error');
+        }
+      };
+      parent.appendChild(div);
+    });
+  }
+}
+
+async function readAllDirFiles() {
+  const outputId = 'output-dir';
+  clearOutput(outputId);
+  if (!dirFiles.length) {
+    appendOutput(outputId, '⚠️ 请先选择一个文件夹', 'warn');
+    return;
+  }
+  appendOutput(outputId, `📂 开始读取 ${dirFiles.length} 个文件...\n\n`, 'info');
+  for (const file of dirFiles) {
+    appendOutput(outputId, `📄 ${file.webkitRelativePath} `, 'path');
+    try {
+      const result = await readFileAs(file, 'text', 'UTF-8');
+      appendOutput(outputId, `→ ${formatSize(file.size)} | ${result.data.length} 字符\n`, 'success');
+    } catch (err) {
+      appendOutput(outputId, `→ ❌ ${err.message}\n`, 'error');
+    }
+  }
+  appendOutput(outputId, '\n✅ 批量读取完成', 'success');
+}
+
+// ==================== 方法4：拖放文件/文件夹 ====================
+const dropZone = document.getElementById('drop-zone');
+let droppedEntries = [];
+
+['dragenter', 'dragover'].forEach(evt => {
+  dropZone.addEventListener(evt, e => {
+    e.preventDefault();
+    e.stopPropagation();
+    dropZone.classList.add('dragover');
+  });
+});
+
+['dragleave', 'drop'].forEach(evt => {
+  dropZone.addEventListener(evt, e => {
+    e.preventDefault();
+    e.stopPropagation();
+    dropZone.classList.remove('dragover');
+  });
+});
+
+dropZone.addEventListener('drop', async function(e) {
+  const items = e.dataTransfer.items;
+  const outputId = 'output-drop';
+  const listId = 'file-list-drop';
+  clearOutput(outputId);
+  const listEl = getOutput(listId);
+  listEl.innerHTML = '';
+  listEl.classList.remove('visible');
+  droppedEntries = [];
+
+  if (!items.length) {
+    appendOutput(outputId, '⚠️ 未检测到任何文件', 'warn');
+    return;
+  }
+
+  listEl.classList.add('visible');
+  listEl.innerHTML = `<div style="color:#58a6ff;padding:4px 6px;">拖放的文件:</div>`;
+  appendOutput(outputId, `🔍 正在扫描 ${items.length} 个条目...\n`, 'info');
+
+  // 递归收集所有条目
+  async function collectEntries(item, path) {
+    const entry = item.webkitGetAsEntry ? item.webkitGetAsEntry() : null;
+    if (!entry) {
+      // 普通文件（webkigetAsEntry 不可用时的降级）
+      const file = item.getAsFile();
+      if (file) {
+        file._relativePath = path + file.name;
+        droppedEntries.push(file);
+        return;
+      }
+      return;
+    }
+    if (entry.isFile) {
+      const file = await new Promise(resolve => entry.file(resolve));
+      file._relativePath = path + entry.name;
+      droppedEntries.push(file);
+    } else if (entry.isDirectory) {
+      const reader = entry.createReader();
+      const readAllEntries = () => new Promise((resolve) => {
+        const all = [];
+        const readBatch = () => {
+          reader.readEntries(entries => {
+            if (entries.length) {
+              all.push(...entries);
+              readBatch();
+            } else {
+              resolve(all);
+            }
+          });
+        };
+        readBatch();
+      });
+      const subEntries = await readAllEntries();
+      for (const sub of subEntries) {
+        await collectEntries({ webkitGetAsEntry: () => sub }, path + entry.name + '/');
+      }
+    }
+  }
+
+  appendOutput(outputId, '⏳ 正在递归扫描目录结构...\n', 'info');
+  for (const item of items) {
+    await collectEntries(item, '');
+  }
+
+  appendOutput(outputId, `✅ 发现 ${droppedEntries.length} 个文件\n`, 'success');
+
+  droppedEntries.forEach(f => {
+    const div = document.createElement('div');
+    div.className = 'item';
+    div.innerHTML = `<span class="name">📄 ${f._relativePath || f.name}</span><span class="size">${formatSize(f.size)}</span>`;
+    div.onclick = async () => {
+      clearOutput(outputId);
+      appendOutput(outputId, `📄 ${f._relativePath || f.name}\n`, 'path');
+      appendOutput(outputId, `📏 ${formatSize(f.size)} | ${f.type || '未知'}\n`, 'info');
+      try {
+        const result = await readFileAs(f, 'text', 'UTF-8');
+        appendOutput(outputId, truncate(result.data, 5000), 'success');
+        appendOutput(outputId, '\n✅ 读取完成', 'success');
+        if (result.data.length > 5000) {
+          const btn = document.createElement('button');
+          btn.textContent = '查看全文';
+          btn.style.marginTop = '6px';
+          btn.onclick = () => openModal(f._relativePath || f.name, result.data);
+          getOutput(outputId).appendChild(btn);
+        }
+      } catch (err) {
+        appendOutput(outputId, '❌ ' + err.message, 'error');
+      }
+    };
+    listEl.appendChild(div);
+  });
+});
+
+// ==================== 方法5：File System Access API ====================
+document.getElementById('btn-pick-file').addEventListener('click', async () => {
+  const outputId = 'output-fsa';
+  const listId = 'file-list-fsa';
+  clearOutput(outputId);
+  const listEl = getOutput(listId);
+  listEl.innerHTML = '';
+  listEl.classList.remove('visible');
+
+  if (!('showOpenFilePicker' in window)) {
+    appendOutput(outputId, '❌ 当前浏览器不支持 File System Access API\n', 'error');
+    appendOutput(outputId, '需要 Chrome 86+ 且在安全上下文（HTTPS/localhost）中使用', 'warn');
+    return;
+  }
+
+  try {
+    const handles = await window.showOpenFilePicker({ multiple: true });
+    listEl.classList.add('visible');
+    listEl.innerHTML = `<div style="color:#58a6ff;padding:4px 6px;">已选择 ${handles.length} 个文件 (FSA):</div>`;
+
+    for (const handle of handles) {
+      const file = await handle.getFile();
+      const div = document.createElement('div');
+      div.className = 'item';
+      div.innerHTML = `<span class="name">🔐 ${file.name}</span><span class="size">${formatSize(file.size)}</span>`;
+      div.onclick = async () => {
+        clearOutput(outputId);
+        appendOutput(outputId, `🔐 FileSystemAccess: ${file.name}\n`, 'path');
+        appendOutput(outputId, `📏 ${formatSize(file.size)} | ${file.type || '未知'}\n`, 'info');
+        appendOutput(outputId, `🔑 权限状态: ${await handle.queryPermission({mode:'read'}) === 'granted' ? '已授权' : '需确认'}\n`, 'info');
+        try {
+          const text = await file.text();
+          appendOutput(outputId, truncate(text, 5000), 'success');
+          appendOutput(outputId, '\n✅ 读取完成', 'success');
+          if (text.length > 5000) {
+            const btn = document.createElement('button');
+            btn.textContent = '查看全文';
+            btn.style.marginTop = '6px';
+            btn.onclick = () => openModal(file.name, text);
+            getOutput(outputId).appendChild(btn);
+          }
+        } catch (err) {
+          appendOutput(outputId, '❌ 读取失败: ' + err.message, 'error');
+        }
+      };
+      listEl.appendChild(div);
+    }
+  } catch (err) {
+    if (err.name !== 'AbortError') {
+      appendOutput(outputId, '❌ ' + err.message, 'error');
+    }
+  }
+});
+
+document.getElementById('btn-pick-dir').addEventListener('click', async () => {
+  const outputId = 'output-fsa';
+  const listId = 'file-list-fsa';
+  clearOutput(outputId);
+  const listEl = getOutput(listId);
+  listEl.innerHTML = '';
+  listEl.classList.remove('visible');
+
+  if (!('showDirectoryPicker' in window)) {
+    appendOutput(outputId, '❌ 当前浏览器不支持 showDirectoryPicker (需要 Chrome 86+)', 'error');
+    return;
+  }
+
+  try {
+    const dirHandle = await window.showDirectoryPicker();
+    listEl.classList.add('visible');
+    listEl.innerHTML = `<div style="color:#58a6ff;padding:4px 6px;">📁 ${dirHandle.name} (递归扫描中...)</div>`;
+
+    const allFiles = [];
+    async function scanDir(handle, path) {
+      for await (const [name, entry] of handle.entries()) {
+        const fullPath = path + '/' + name;
+        if (entry.kind === 'file') {
+          allFiles.push({ handle: entry, path: fullPath });
+        } else if (entry.kind === 'directory') {
+          await scanDir(entry, fullPath);
+        }
+      }
+    }
+    await scanDir(dirHandle, dirHandle.name);
+
+    listEl.innerHTML = `<div style="color:#58a6ff;padding:4px 6px;">📁 ${dirHandle.name} (${allFiles.length} 个文件)</div>`;
+
+    for (const { handle, path } of allFiles) {
+      const file = await handle.getFile();
+      const div = document.createElement('div');
+      div.className = 'item';
+      div.innerHTML = `<span class="name">🔐 📄 ${path}</span><span class="size">${formatSize(file.size)}</span>`;
+      div.onclick = async () => {
+        clearOutput(outputId);
+        appendOutput(outputId, `🔐 ${path}\n`, 'path');
+        appendOutput(outputId, `📏 ${formatSize(file.size)} | ${file.type || '未知'}\n`, 'info');
+        try {
+          const text = await file.text();
+          appendOutput(outputId, truncate(text, 5000), 'success');
+          appendOutput(outputId, '\n✅ 读取完成', 'success');
+          if (text.length > 5000) {
+            const btn = document.createElement('button');
+            btn.textContent = '查看全文';
+            btn.style.marginTop = '6px';
+            btn.onclick = () => openModal(path, text);
+            getOutput(outputId).appendChild(btn);
+          }
+        } catch (err) {
+          appendOutput(outputId, '❌ 读取失败: ' + err.message, 'error');
+        }
+      };
+      listEl.appendChild(div);
+    }
+  } catch (err) {
+    if (err.name !== 'AbortError') {
+      appendOutput(outputId, '❌ ' + err.message, 'error');
+    }
+  }
+});
+
+// ==================== 方法6：剪贴板读取 ====================
+const clipboardZone = document.getElementById('clipboard-zone');
+clipboardZone.addEventListener('paste', async function(e) {
+  const items = e.clipboardData.items;
+  const outputId = 'output-clipboard';
+  const listId = 'file-list-clipboard';
+  clearOutput(outputId);
+  const listEl = getOutput(listId);
+  listEl.innerHTML = '';
+  listEl.classList.remove('visible');
+
+  const files = [];
+  for (const item of items) {
+    if (item.kind === 'file') {
+      files.push(item.getAsFile());
+    }
+  }
+
+  if (!files.length) {
+    appendOutput(outputId, '⚠️ 剪贴板中没有文件数据', 'warn');
+    return;
+  }
+
+  listEl.classList.add('visible');
+  listEl.innerHTML = `<div style="color:#58a6ff;padding:4px 6px;">剪贴板中的文件 (${files.length}):</div>`;
+
+  for (const file of files) {
+    const div = document.createElement('div');
+    div.className = 'item';
+    div.innerHTML = `<span class="name">📋 ${file.name || '(未命名)'}</span><span class="size">${formatSize(file.size)}</span>`;
+    div.onclick = async () => {
+      clearOutput(outputId);
+      appendOutput(outputId, `📋 剪贴板: ${file.name || '(未命名)'}\n`, 'path');
+      appendOutput(outputId, `📏 ${formatSize(file.size)} | ${file.type || '未知'}\n`, 'info');
+      try {
+        const result = await readFileAs(file, 'text', 'UTF-8');
+        appendOutput(outputId, truncate(result.data, 5000), 'success');
+        appendOutput(outputId, '\n✅ 读取完成', 'success');
+        if (result.data.length > 5000) {
+          const btn = document.createElement('button');
+          btn.textContent = '查看全文';
+          btn.style.marginTop = '6px';
+          btn.onclick = () => openModal(file.name, result.data);
+          getOutput(outputId).appendChild(btn);
+        }
+      } catch (err) {
+        appendOutput(outputId, '❌ ' + err.message, 'error');
+      }
+    };
+    listEl.appendChild(div);
+  }
+});
+
+// 防止在 clipboard zone 中粘贴文本时跳转
+clipboardZone.addEventListener('keydown', function(e) {
+  if (e.ctrlKey && e.key === 'v') {
+    // 不做任何阻止，让 paste 事件正常触发
+  }
+});
+
+// ==================== 全局：允许在页面任意位置粘贴 ====================
+document.addEventListener('paste', function(e) {
+  // 如果焦点不在 clipboard-zone 上，也检查是否有文件
+  if (document.activeElement !== clipboardZone && e.clipboardData && e.clipboardData.items) {
+    const hasFile = Array.from(e.clipboardData.items).some(item => item.kind === 'file');
+    if (hasFile) {
+      // 把焦点转移到 clipboard-zone 并重新触发
+      e.preventDefault();
+      const items = e.clipboardData.items;
+      const outputId = 'output-clipboard';
+      const listId = 'file-list-clipboard';
+      const listEl = getOutput(listId);
+      listEl.innerHTML = '';
+
+      const files = [];
+      for (const item of items) {
+        if (item.kind === 'file') files.push(item.getAsFile());
+      }
+
+      if (files.length) {
+        clearOutput(outputId);
+        listEl.classList.add('visible');
+        listEl.innerHTML = `<div style="color:#58a6ff;padding:4px 6px;">剪贴板中的文件 (${files.length}):</div>`;
+        // 滚动到剪贴板卡片
+        document.getElementById('card-clipboard').scrollIntoView({ behavior: 'smooth' });
+
+        for (const file of files) {
+          const div = document.createElement('div');
+          div.className = 'item';
+          div.innerHTML = `<span class="name">📋 ${file.name || '(未命名)'}</span><span class="size">${formatSize(file.size)}</span>`;
+          div.onclick = async () => {
+            clearOutput(outputId);
+            appendOutput(outputId, `📋 剪贴板: ${file.name || '(未命名)'}\n`, 'path');
+            appendOutput(outputId, `📏 ${formatSize(file.size)} | ${file.type || '未知'}\n`, 'info');
+            try {
+              const result = await readFileAs(file, 'text', 'UTF-8');
+              appendOutput(outputId, truncate(result.data, 5000), 'success');
+              appendOutput(outputId, '\n✅ 读取完成', 'success');
+              if (result.data.length > 5000) {
+                const btn = document.createElement('button');
+                btn.textContent = '查看全文';
+                btn.style.marginTop = '6px';
+                btn.onclick = () => openModal(file.name, result.data);
+                getOutput(outputId).appendChild(btn);
+              }
+            } catch (err) {
+              appendOutput(outputId, '❌ ' + err.message, 'error');
+            }
+          };
+          listEl.appendChild(div);
+        }
+      }
+    }
+  }
+});
+
+// 初始化统计
+document.getElementById('method-count').textContent = '6';
+
+console.log('📂 Local File Reader 已就绪');
+console.log('支持的方法:');
+console.log('  1. 单文件选择 (FileReader API)');
+console.log('  2. 多文件选择 (Multiple)');
+console.log('  3. 文件夹选择 (webkitdirectory)');
+console.log('  4. 拖放文件/文件夹 (Drag & Drop + webkitGetAsEntry)');
+console.log('  5. File System Access API (showOpenFilePicker / showDirectoryPicker)');
+console.log('  6. 剪贴板粘贴 (Clipboard API)');
+</script>
+
+</body>
+</html>

